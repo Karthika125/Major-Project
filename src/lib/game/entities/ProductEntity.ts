@@ -13,6 +13,8 @@ export class ProductEntity {
     public interactionRadius: number = 80;
     private hoverElevation: number = 0;
     private targetElevation: number = 0;
+    private image: HTMLImageElement | null = null;
+    private imageLoaded: boolean = false;
 
     constructor(product: Product) {
         this.product = product;
@@ -20,6 +22,20 @@ export class ProductEntity {
             x: product.position_x,
             y: product.position_y,
         };
+
+        // Load product image
+        if (product.image_url) {
+            this.image = new Image();
+            this.image.crossOrigin = 'anonymous';
+            this.image.onload = () => {
+                this.imageLoaded = true;
+            };
+            this.image.onerror = () => {
+                console.error(`Failed to load image for ${product.name}:`, product.image_url);
+                this.imageLoaded = false;
+            };
+            this.image.src = product.image_url;
+        }
     }
 
     private autoPosition(product: Product, storeId: string): Vector2D {
@@ -76,7 +92,6 @@ export class ProductEntity {
 
         // 🎨 3D SHADOW EFFECT
         const shadowOffset = 3 + this.hoverElevation * 0.5;
-        const shadowBlur = 8 + this.hoverElevation;
 
         ctx.save();
 
@@ -94,61 +109,76 @@ export class ProductEntity {
         );
         ctx.fill();
 
-        // 🎨 PRODUCT BOX WITH GRADIENT (depth effect)
-        const gradient = ctx.createLinearGradient(
-            screenX,
-            screenY,
-            screenX,
-            screenY + this.height
-        );
+        // 🖼️ DRAW PRODUCT IMAGE OR FALLBACK BOX
+        if (this.imageLoaded && this.image) {
+            // Draw the actual product image
+            ctx.drawImage(this.image, screenX, screenY, this.width, this.height);
 
-        if (this.isHighlighted) {
-            gradient.addColorStop(0, '#FFF8DC');
-            gradient.addColorStop(1, '#FFE4B5');
+            // Add subtle border around image
+            ctx.strokeStyle = this.isHighlighted ? '#FFD700' : 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = this.isHighlighted ? 3 : 2;
+            ctx.strokeRect(screenX, screenY, this.width, this.height);
         } else {
-            gradient.addColorStop(0, '#FFFFFF');
-            gradient.addColorStop(1, '#F0F0F0');
+            // Fallback: Draw gradient box while image loads or if it fails
+            const gradient = ctx.createLinearGradient(
+                screenX,
+                screenY,
+                screenX,
+                screenY + this.height
+            );
+
+            if (this.isHighlighted) {
+                gradient.addColorStop(0, '#FFF8DC');
+                gradient.addColorStop(1, '#FFE4B5');
+            } else {
+                gradient.addColorStop(0, '#FFFFFF');
+                gradient.addColorStop(1, '#F0F0F0');
+            }
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(screenX, screenY, this.width, this.height);
+
+            // 🎨 3D BORDER EFFECT (creates depth)
+            // Top and left edges (lighter - highlight)
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(screenX, screenY + this.height);
+            ctx.lineTo(screenX, screenY);
+            ctx.lineTo(screenX + this.width, screenY);
+            ctx.stroke();
+
+            // Bottom and right edges (darker - shadow)
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.beginPath();
+            ctx.moveTo(screenX + this.width, screenY);
+            ctx.lineTo(screenX + this.width, screenY + this.height);
+            ctx.lineTo(screenX, screenY + this.height);
+            ctx.stroke();
+
+            // Main border
+            ctx.strokeStyle = this.isHighlighted ? '#FFD700' : '#CCC';
+            ctx.lineWidth = this.isHighlighted ? 3 : 1;
+            ctx.strokeRect(screenX, screenY, this.width, this.height);
+
+            // Product name (only show if no image)
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 10px Arial';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+            ctx.shadowBlur = 2;
+
+            const words = this.product.name.split(' ');
+            words.forEach((word, i) => {
+                ctx.fillText(
+                    word,
+                    screenX + this.width / 2,
+                    screenY + 20 + i * 12
+                );
+            });
+
+            ctx.shadowBlur = 0;
         }
-
-        ctx.fillStyle = gradient;
-        ctx.fillRect(screenX, screenY, this.width, this.height);
-
-        // 🎨 3D BORDER EFFECT (creates depth)
-        // Top and left edges (lighter - highlight)
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(screenX, screenY + this.height);
-        ctx.lineTo(screenX, screenY);
-        ctx.lineTo(screenX + this.width, screenY);
-        ctx.stroke();
-
-        // Bottom and right edges (darker - shadow)
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
-        ctx.beginPath();
-        ctx.moveTo(screenX + this.width, screenY);
-        ctx.lineTo(screenX + this.width, screenY + this.height);
-        ctx.lineTo(screenX, screenY + this.height);
-        ctx.stroke();
-
-        // Main border
-        ctx.strokeStyle = this.isHighlighted ? '#FFD700' : '#CCC';
-        ctx.lineWidth = this.isHighlighted ? 3 : 1;
-        ctx.strokeRect(screenX, screenY, this.width, this.height);
-
-        // 🎨 HIGHLIGHT SHINE (top-left corner)
-        const shineGradient = ctx.createRadialGradient(
-            screenX + 15,
-            screenY + 15,
-            0,
-            screenX + 15,
-            screenY + 15,
-            20
-        );
-        shineGradient.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
-        shineGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.fillStyle = shineGradient;
-        ctx.fillRect(screenX, screenY, this.width / 2, this.height / 2);
 
         // Glow effect when highlighted
         if (this.isHighlighted) {
@@ -160,33 +190,27 @@ export class ProductEntity {
             ctx.shadowBlur = 0;
         }
 
-        // Product name
-        ctx.fillStyle = '#333';
-        ctx.font = 'bold 10px Arial';
+        // Price badge (always show)
+        const priceText = `$${this.product.price}`;
+        const priceWidth = ctx.measureText(priceText).width + 12;
+        const priceHeight = 18;
+        const priceX = screenX + this.width - priceWidth - 2;
+        const priceY = screenY + this.height - priceHeight - 2;
+
+        // Price background
+        ctx.fillStyle = 'rgba(231, 76, 60, 0.9)';
+        ctx.fillRect(priceX, priceY, priceWidth, priceHeight);
+
+        // Price text
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 11px Arial';
         ctx.textAlign = 'center';
-        ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
-        ctx.shadowBlur = 2;
-
-        const words = this.product.name.split(' ');
-        words.forEach((word, i) => {
-            ctx.fillText(
-                word,
-                screenX + this.width / 2,
-                screenY + 20 + i * 12
-            );
-        });
-
-        ctx.shadowBlur = 0;
-
-        // Price with background
-        ctx.fillStyle = '#E74C3C';
-        ctx.font = 'bold 12px Arial';
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
         ctx.shadowBlur = 2;
         ctx.fillText(
-            `$${this.product.price}`,
-            screenX + this.width / 2,
-            screenY + this.height - 8
+            priceText,
+            priceX + priceWidth / 2,
+            priceY + 13
         );
 
         ctx.shadowBlur = 0;

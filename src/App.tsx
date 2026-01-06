@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './lib/auth/AuthProvider';
 import { LoginPage } from './pages/LoginPage';
 import { MallPage } from './pages/MallPage';
 import { StorePage } from './pages/StorePage';
+import { AdminPage } from './pages/AdminPage';
 import './App.css';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -43,6 +44,7 @@ function App() {
                             </ProtectedRoute>
                         }
                     />
+                    <Route path="/admin" element={<AdminPage />} />
                     <Route path="/" element={<Navigate to="/mall" />} />
                 </Routes>
             </BrowserRouter>

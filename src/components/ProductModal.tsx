@@ -87,9 +87,17 @@ export const ProductModal: React.FC<Props> = ({ product, onClose }) => {
 
                 <div className={styles.content}>
                     <div className={styles.imageContainer}>
-                        <div className={styles.imagePlaceholder}>
-                            📦
-                        </div>
+                        {product.image_url ? (
+                            <img
+                                src={product.image_url}
+                                alt={product.name}
+                                className={styles.productImage}
+                            />
+                        ) : (
+                            <div className={styles.imagePlaceholder}>
+                                📦
+                            </div>
+                        )}
                     </div>
 
                     <div className={styles.details}>
