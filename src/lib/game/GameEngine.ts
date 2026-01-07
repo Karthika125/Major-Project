@@ -52,23 +52,23 @@ export class GameEngine {
             this.camera.adjustZoom(delta);
         }, { passive: false });
         // Spawn NPCs
-        this.spawnNPCs();
+        //this.spawnNPCs();
     }
 
-    private spawnNPCs(): void {
-        const npcNames = ['Alex', 'Sam', 'Jordan', 'Taylor', 'Casey'];
+    // private spawnNPCs(): void {
+    //     const npcNames = ['Alex', 'Sam', 'Jordan', 'Taylor', 'Casey'];
 
-        for (let i = 0; i < 5; i++) {
-            const x = Math.random() * (STORE_WIDTH - 200) + 100;
-            const y = Math.random() * (STORE_HEIGHT - 200) + 100;
-            const npc = new NPCAvatar(
-                `npc-${i}`,
-                npcNames[i],
-                { x, y }
-            );
-            this.npcAvatars.push(npc);
-        }
-    }
+    //     for (let i = 0; i < 5; i++) {
+    //         const x = Math.random() * (STORE_WIDTH - 200) + 100;
+    //         const y = Math.random() * (STORE_HEIGHT - 200) + 100;
+    //         const npc = new NPCAvatar(
+    //             `npc-${i}`,
+    //             npcNames[i],
+    //             { x, y }
+    //         );
+    //         this.npcAvatars.push(npc);
+    //     }
+    // }
 
     private resize(): void {
         this.canvas.width = window.innerWidth;
