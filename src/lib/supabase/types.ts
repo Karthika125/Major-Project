@@ -13,23 +13,23 @@ export interface Database {
                 Row: {
                     id: string
                     username: string
-                    avatar_type: string
-                    created_at: string
-                    updated_at: string
+                    avatar_type: string | null
+                    created_at: string | null
+                    updated_at: string | null
                 }
                 Insert: {
                     id: string
                     username: string
-                    avatar_type?: string
-                    created_at?: string
-                    updated_at?: string
+                    avatar_type?: string | null
+                    created_at?: string | null
+                    updated_at?: string | null
                 }
                 Update: {
                     id?: string
                     username?: string
-                    avatar_type?: string
-                    created_at?: string
-                    updated_at?: string
+                    avatar_type?: string | null
+                    created_at?: string | null
+                    updated_at?: string | null
                 }
             }
             products: {
@@ -42,7 +42,7 @@ export interface Database {
                     image_url: string | null
                     position_x: number
                     position_y: number
-                    created_at: string
+                    created_at: string | null
                 }
                 Insert: {
                     id?: string
@@ -53,7 +53,7 @@ export interface Database {
                     image_url?: string | null
                     position_x: number
                     position_y: number
-                    created_at?: string
+                    created_at?: string | null
                 }
                 Update: {
                     id?: string
@@ -64,7 +64,7 @@ export interface Database {
                     image_url?: string | null
                     position_x?: number
                     position_y?: number
-                    created_at?: string
+                    created_at?: string | null
                 }
             }
             cart_items: {
@@ -73,21 +73,21 @@ export interface Database {
                     user_id: string
                     product_id: string
                     quantity: number
-                    created_at: string
+                    created_at: string | null
                 }
                 Insert: {
                     id?: string
                     user_id: string
                     product_id: string
                     quantity?: number
-                    created_at?: string
+                    created_at?: string | null
                 }
                 Update: {
                     id?: string
                     user_id?: string
                     product_id?: string
                     quantity?: number
-                    created_at?: string
+                    created_at?: string | null
                 }
             }
             orders: {
@@ -95,25 +95,25 @@ export interface Database {
                     id: string
                     user_id: string
                     total: number
-                    status: string
+                    status: string | null
                     items: Json
-                    created_at: string
+                    created_at: string | null
                 }
                 Insert: {
                     id?: string
                     user_id: string
                     total: number
-                    status?: string
+                    status?: string | null
                     items: Json
-                    created_at?: string
+                    created_at?: string | null
                 }
                 Update: {
                     id?: string
                     user_id?: string
                     total?: number
-                    status?: string
+                    status?: string | null
                     items?: Json
-                    created_at?: string
+                    created_at?: string | null
                 }
             }
             chat_messages: {
@@ -124,7 +124,7 @@ export interface Database {
                     message: string
                     position_x: number | null
                     position_y: number | null
-                    created_at: string
+                    created_at: string | null
                 }
                 Insert: {
                     id?: string
@@ -133,7 +133,7 @@ export interface Database {
                     message: string
                     position_x?: number | null
                     position_y?: number | null
-                    created_at?: string
+                    created_at?: string | null
                 }
                 Update: {
                     id?: string
@@ -142,7 +142,7 @@ export interface Database {
                     message?: string
                     position_x?: number | null
                     position_y?: number | null
-                    created_at?: string
+                    created_at?: string | null
                 }
             }
             user_presence: {
@@ -151,27 +151,27 @@ export interface Database {
                     username: string
                     position_x: number
                     position_y: number
-                    direction: string
-                    is_moving: boolean
-                    last_seen: string
+                    direction: string | null
+                    is_moving: boolean | null
+                    last_seen: string | null
                 }
                 Insert: {
                     user_id: string
                     username: string
                     position_x?: number
                     position_y?: number
-                    direction?: string
-                    is_moving?: boolean
-                    last_seen?: string
+                    direction?: string | null
+                    is_moving?: boolean | null
+                    last_seen?: string | null
                 }
                 Update: {
                     user_id?: string
                     username?: string
                     position_x?: number
                     position_y?: number
-                    direction?: string
-                    is_moving?: boolean
-                    last_seen?: string
+                    direction?: string | null
+                    is_moving?: boolean | null
+                    last_seen?: string | null
                 }
             }
             user_activity: {
@@ -181,7 +181,7 @@ export interface Database {
                     product_id: string | null
                     action_type: string
                     duration: number | null
-                    created_at: string
+                    created_at: string | null
                 }
                 Insert: {
                     id?: string
@@ -189,7 +189,7 @@ export interface Database {
                     product_id?: string | null
                     action_type: string
                     duration?: number | null
-                    created_at?: string
+                    created_at?: string | null
                 }
                 Update: {
                     id?: string
@@ -197,9 +197,41 @@ export interface Database {
                     product_id?: string | null
                     action_type?: string
                     duration?: number | null
-                    created_at?: string
+                    created_at?: string | null
                 }
             }
+            presence: {
+                Row: {
+                    user_id: string
+                    username: string | null
+                    position: Json | null
+                    avatar_customization: Json | null
+                    last_seen: string | null
+                }
+                Insert: {
+                    user_id: string
+                    username?: string | null
+                    position?: Json | null
+                    avatar_customization?: Json | null
+                    last_seen?: string | null
+                }
+                Update: {
+                    user_id?: string
+                    username?: string | null
+                    position?: Json | null
+                    avatar_customization?: Json | null
+                    last_seen?: string | null
+                }
+            }
+        }
+        Views: {
+            [_ in never]: never
+        }
+        Functions: {
+            [_ in never]: never
+        }
+        Enums: {
+            [_ in never]: never
         }
     }
 }

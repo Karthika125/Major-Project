@@ -51,6 +51,12 @@ interface GameState {
     // Recommendations
     recommendations: Product[];
     setRecommendations: (products: Product[]) => void;
+
+    // Scene State (3D)
+    currentScene: 'entrance' | 'store';
+    setCurrentScene: (scene: 'entrance' | 'store') => void;
+    hasCompletedEntrance: boolean;
+    setHasCompletedEntrance: (completed: boolean) => void;
 }
 
 export const useGameStore = create<GameState>((set) => ({
@@ -128,4 +134,10 @@ export const useGameStore = create<GameState>((set) => ({
     // Recommendations
     recommendations: [],
     setRecommendations: (products) => set({ recommendations: products }),
+
+    // Scene State (3D)
+    currentScene: 'entrance',
+    setCurrentScene: (scene) => set({ currentScene: scene }),
+    hasCompletedEntrance: false,
+    setHasCompletedEntrance: (completed) => set({ hasCompletedEntrance: completed }),
 }));

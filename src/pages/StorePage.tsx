@@ -1,6 +1,8 @@
+//StorePage.tsx
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { GameEngine } from '../lib/game/GameEngine';
+import { Canvas } from '@react-three/fiber';
+import { PerspectiveCamera } from '@react-three/drei';
 import { PresenceManager } from '../lib/realtime/PresenceManager';
 import { ChatManager } from '../lib/realtime/ChatManager';
 import { supabase } from '../lib/supabase/client';
@@ -13,23 +15,16 @@ import { HUD } from '../components/HUD';
 import { CheckoutModal } from '../components/CheckoutModal';
 import { AIAssistant } from '../components/AIAssistant';
 import { RecommendationPanel } from '../components/RecommendationPanel';
-import { CameraControls } from '../components/CameraControls';
 import { PlayerInteraction } from '../components/PlayerInteraction';
 import { AvatarCustomization, AvatarCustomization as AvatarCustomizationType } from '../components/AvatarCustomization';
-import { Minimap } from '@/components/Minimap';
 import { NotificationSystem } from '@/components/NotificationSystem';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { PerformanceMonitor } from '@/components/PerformanceMonitor';
 import { CameraStyleAdvisor } from '../components/CameraStyleAdvisor';
+import { EntranceScene } from '../components/EntranceScene';
+import { Store3D } from '../components/Store3D';
+import { ProductProximityHUD } from '../components/ProductProximityHUD';
 import styles from './StorePage.module.css';
-
-interface CameraState {
-    zoom: number;
-    rotation: number;
-    pitch: number;
-    x: number;
-    y: number;
-}
 
 interface StoreTheme {
     name: string;
@@ -71,11 +66,8 @@ const STORE_THEMES: Record<string, StoreTheme> = {
 };
 
 export const StorePage: React.FC = () => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const gameEngineRef = useRef<GameEngine | null>(null);
     const presenceManagerRef = useRef<PresenceManager | null>(null);
     const chatManagerRef = useRef<ChatManager | null>(null);
-    const animationFrameRef = useRef<number>();
 
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -84,20 +76,13 @@ export const StorePage: React.FC = () => {
 
     const [loading, setLoading] = useState(true);
     const [loadingProgress, setLoadingProgress] = useState(0);
-    const [cameraState, setCameraState] = useState<CameraState>({
-        zoom: 1.0,
-        rotation: 0,
-        pitch: 45,
-        x: 0,
-        y: 0
-    });
-    const [showMinimap, setShowMinimap] = useState(true);
     const [showPerformance, setShowPerformance] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [notifications, setNotifications] = useState<Array<{ id: string; message: string; type: 'info' | 'success' | 'warning' | 'error' }>>([]);
     const [selectedPlayer, setSelectedPlayer] = useState<{ user_id: string; username: string } | null>(null);
     const [showCustomization, setShowCustomization] = useState(false);
     const [showStyleAdvisor, setShowStyleAdvisor] = useState(false);
+    const [closestProduct, setClosestProduct] = useState<typeof products[0] | null>(null);
     const [avatarCustomization, setAvatarCustomization] = useState<AvatarCustomizationType>({
         bodyColor: '#4A90E2',
         skinTone: '#FFD1A3',
@@ -105,11 +90,14 @@ export const StorePage: React.FC = () => {
     });
 
     const {
+        products,
         setProducts,
         selectedProduct,
         setSelectedProduct,
         setIsCheckoutOpen,
         isCheckoutOpen,
+        currentScene,
+        setCurrentScene,
     } = useGameStore();
 
     // Optimized notification system
@@ -120,30 +108,6 @@ export const StorePage: React.FC = () => {
             setNotifications(prev => prev.filter(n => n.id !== id));
         }, 5000);
     }, []);
-
-    // Enhanced 3D camera controls
-    // Simplified camera controls
-    const handleCameraView = useCallback((view: 'aerial' | 'normal' | 'close') => {
-        const engine = gameEngineRef.current;
-        if (!engine) return;
-
-        const camera = engine.getCamera();
-
-        switch (view) {
-            case 'aerial':
-                camera.setAerialView();
-                addNotification('Switched to Aerial View 🔭', 'info');
-                break;
-            case 'normal':
-                camera.setNormalView();
-                addNotification('Switched to Normal View 👁️', 'info');
-                break;
-            case 'close':
-                camera.setCloseView();
-                addNotification('Switched to Close View 🔍', 'info');
-                break;
-        }
-    }, [addNotification]);
 
     // Player interaction handlers
     const handleWave = useCallback(() => {
@@ -178,31 +142,6 @@ export const StorePage: React.FC = () => {
         }
     }, []);
 
-    // Optimized camera state update using RAF
-    useEffect(() => {
-        const updateCameraState = () => {
-            if (gameEngineRef.current) {
-                const camera = gameEngineRef.current.getCamera();
-                setCameraState({
-                    zoom: camera.zoom,
-                    rotation: camera.rotation,
-                    pitch: camera.pitch ?? 45,
-                    x: camera.x ?? 0,
-                    y: camera.y ?? 0
-                });
-            }
-            animationFrameRef.current = requestAnimationFrame(updateCameraState);
-        };
-
-        animationFrameRef.current = requestAnimationFrame(updateCameraState);
-
-        return () => {
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
-        };
-    }, []);
-
     // Keyboard shortcut for testing player interaction
     useEffect(() => {
         const handleKeyPress = (e: KeyboardEvent) => {
@@ -216,31 +155,19 @@ export const StorePage: React.FC = () => {
         window.addEventListener('keydown', handleKeyPress);
         return () => window.removeEventListener('keydown', handleKeyPress);
     }, [addNotification]);
-
-
     useEffect(() => {
         if (!user) {
             navigate('/login');
             return;
         }
 
-        let cleanupStoreSub: (() => void) | undefined;
-        let timeout: NodeJS.Timeout;
-
         const initializeStore = async () => {
-            console.log('🚀 Store initialization started');
+            console.log('🚀 3D Store initialization started');
             setLoadingProgress(10);
-
-            // 🔐 Fail-safe timeout
-            timeout = setTimeout(() => {
-                console.warn('⚠️ Store init timeout — forcing render');
-                setLoading(false);
-                addNotification('Store loaded with timeout', 'warning');
-            }, 6000);
 
             try {
                 // ✅ Load user profile
-                setLoadingProgress(20);
+                setLoadingProgress(30);
                 const { data: profiles, error: profileError } = await supabase
                     .from('users')
                     .select('*')
@@ -248,7 +175,6 @@ export const StorePage: React.FC = () => {
 
                 if (profileError || !profiles || profiles.length === 0) {
                     console.error('❌ User profile missing', profileError);
-                    clearTimeout(timeout);
                     setLoading(false);
                     addNotification('Failed to load user profile', 'error');
                     navigate('/login');
@@ -257,107 +183,45 @@ export const StorePage: React.FC = () => {
 
                 const profile = profiles[0];
                 console.log('✅ Profile loaded');
-                setLoadingProgress(40);
+                setLoadingProgress(60);
 
                 // ✅ Load products
-                const { data: products, error: productError } = await supabase
+                const { data: productsData, error: productError } = await supabase
                     .from('products')
                     .select('*');
 
                 if (productError) {
                     console.error('❌ Failed to load products', productError);
                     addNotification('Some products failed to load', 'warning');
-                } else if (products) {
-                    setProducts(products);
-                    console.log('✅ Products loaded');
+                } else if (productsData) {
+                    setProducts(productsData);
+                    console.log('✅ Products loaded:', productsData.length);
                 }
-                setLoadingProgress(60);
-
-                if (!canvasRef.current) {
-                    console.error('❌ Canvas not ready');
-                    clearTimeout(timeout);
-                    setLoading(false);
-                    return;
-                }
-
-                // 🎮 Initialize game engine
-                const engine = new GameEngine(canvasRef.current);
-                gameEngineRef.current = engine;
-
-                engine.initPlayer(user.id, profile.username);
-                if (products) engine.setProducts(products);
-                setLoadingProgress(70);
-
-                engine.setOnProductClick((product) => {
-                    setSelectedProduct(product);
-                    addNotification(`Viewing ${product.name}`, 'info');
-                    supabase.from('user_activity').insert({
-                        user_id: user.id,
-                        product_id: product.id,
-                        action_type: 'view',
-                    });
-                });
-
-                engine.setOnCheckoutEnter(() => {
-                    setIsCheckoutOpen(true);
-                    addNotification('Entering checkout area', 'info');
-                });
-
-                engine.setOnPlayerClick((player) => {
-                    setSelectedPlayer(player);
-                });
-
                 setLoadingProgress(80);
 
-                // 🌐 Presence (NON-BLOCKING)
+                // 🌐 Initialize presence manager
                 const presenceManager = new PresenceManager(user.id, profile.username);
                 presenceManagerRef.current = presenceManager;
                 presenceManager.initialize().catch((err) =>
                     console.error('❌ Presence init failed', err)
                 );
 
-                engine.setOnPositionUpdate((position) => {
-                    presenceManager.updatePosition(position);
-                });
-
-                // 💬 Chat (NON-BLOCKING)
+                // 💬 Initialize chat manager
                 const chatManager = new ChatManager(user.id, profile.username);
                 chatManagerRef.current = chatManager;
                 chatManager.initialize().catch((err) =>
                     console.error('❌ Chat init failed', err)
                 );
 
-                setLoadingProgress(90);
-
-                // 👥 Sync other players (optimized)
-                let previousPlayers = useGameStore.getState().otherPlayers;
-                cleanupStoreSub = useGameStore.subscribe((state) => {
-                    if (state.otherPlayers !== previousPlayers) {
-                        previousPlayers = state.otherPlayers;
-                        // Batch update for performance
-                        requestAnimationFrame(() => {
-                            state.otherPlayers.forEach((player) => {
-                                engine.updateRemotePlayer(
-                                    player.user_id,
-                                    player.username,
-                                    player
-                                );
-                            });
-                        });
-                    }
-                });
-
-                engine.start();
-                console.log('✅ Game engine started');
                 setLoadingProgress(100);
+                console.log('✅ 3D Store ready');
 
-                clearTimeout(timeout);
                 setTimeout(() => {
                     setLoading(false);
+                    addNotification(`Welcome to ${storeTheme.name}! 🎉`, 'success');
                 }, 300);
             } catch (error) {
                 console.error('❌ Store initialization failed', error);
-                clearTimeout(timeout);
                 setLoading(false);
                 addNotification('Failed to initialize store', 'error');
             }
@@ -365,55 +229,62 @@ export const StorePage: React.FC = () => {
 
         initializeStore();
 
-        // Keyboard shortcuts
-        const handleKeyPress = (e: KeyboardEvent) => {
-            if (e.ctrlKey || e.metaKey) {
-                switch (e.key.toLowerCase()) {
-                    case 'm':
-                        e.preventDefault();
-                        setShowMinimap(prev => !prev);
-                        break;
-                    case 'f':
-                        e.preventDefault();
-                        toggleFullscreen();
-                        break;
-                    case 'p':
-                        e.preventDefault();
-                        setShowPerformance(prev => !prev);
-                        break;
-                }
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyPress);
-
         return () => {
-            cleanupStoreSub?.();
-            gameEngineRef.current?.cleanup();
             presenceManagerRef.current?.cleanup();
             chatManagerRef.current?.cleanup();
-            clearTimeout(timeout);
-            window.removeEventListener('keydown', handleKeyPress);
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
         };
-    }, [user, navigate, setProducts, setSelectedProduct, setIsCheckoutOpen, addNotification, toggleFullscreen]);
+    }, [user, navigate, setProducts, addNotification, storeTheme.name]);
 
     // ⏳ Enhanced loading screen
     if (loading) {
         return (
             <LoadingScreen
                 progress={loadingProgress}
-                message="Loading virtual store..."
+                message="Loading 3D virtual store..."
             />
         );
     }
 
-    // 🏬 Enhanced Store UI
+    // Handle entrance completion
+    const handleEntranceComplete = () => {
+        setCurrentScene('store');
+        addNotification('Welcome to the store! Use WASD to move and mouse to look around.', 'info');
+    };
+
+    // Handle product click in 3D store
+    const handleProductClick = (product: typeof products[0]) => {
+        setSelectedProduct(product);
+        addNotification(`Viewing ${product.name}`, 'info');
+    };
+
+    // 🏬 3D Store UI
     return (
         <div className={styles.container}>
-            <canvas ref={canvasRef} className={styles.canvas} />
+            {/* 3D Scene - Entrance or Store */}
+            {currentScene === 'entrance' ? (
+                <EntranceScene
+                    storeName={storeTheme.name}
+                    storeTheme={storeTheme}
+                    onComplete={handleEntranceComplete}
+                />
+            ) : (
+                <Canvas shadows className={styles.canvas}>
+                    <PerspectiveCamera makeDefault position={[0, 1.6, 12]} fov={75} />
+                    <Store3D
+                        products={products}
+                        onProductClick={handleProductClick}
+                        storeTheme={storeTheme}
+                        avatarCustomization={avatarCustomization}
+                        presenceManager={presenceManagerRef.current}
+                        onPlayerSelect={setSelectedPlayer}
+                        onClosestProductChange={setClosestProduct}
+                    />
+                </Canvas>
+            )}
+
+            {/* Product Proximity HUD */}
+            {currentScene === 'store' && <ProductProximityHUD product={closestProduct} />}
+
 
             {/* Back to Mall Button */}
             <button
@@ -430,43 +301,19 @@ export const StorePage: React.FC = () => {
                 <span className={styles.storeName}>{storeTheme.name}</span>
             </div>
 
-            {/* Core UI Components */}
-            <HUD />
+            {/* Core UI Components - Only show in store scene */}
+            {currentScene === 'store' && (
+                <>
+                    <HUD />
 
-            <ChatPanel
-                chatManager={chatManagerRef.current}
-                inputManager={gameEngineRef.current?.getInputManager()}
-            />
+                    <ChatPanel
+                        chatManager={chatManagerRef.current}
+                        inputManager={null}
+                    />
 
-            <CartPanel />
-            <RecommendationPanel />
-
-            {/* Simplified Camera Controls */}
-            <CameraControls
-                onAerialView={() => handleCameraView('aerial')}
-                onNormalView={() => handleCameraView('normal')}
-                onCloseView={() => handleCameraView('close')}
-                onZoomIn={() => gameEngineRef.current?.getCamera().adjustZoom(0.1)}
-                onZoomOut={() => gameEngineRef.current?.getCamera().adjustZoom(-0.1)}
-                zoom={cameraState.zoom}
-                currentView={gameEngineRef.current?.getCamera().getCurrentView() || 'normal'}
-            />
-
-            {/* Minimap */}
-            {showMinimap && (
-                <Minimap
-                    playerPosition={{ x: cameraState.x, y: cameraState.y }}
-                    otherPlayers={useGameStore.getState().otherPlayers}
-                    products={useGameStore.getState().products}
-                    onToggle={() => setShowMinimap(false)}
-                />
-            )}
-
-            {/* Performance Monitor (Dev tool) */}
-            {showPerformance && (
-                <PerformanceMonitor
-                    onClose={() => setShowPerformance(false)}
-                />
+                    <CartPanel />
+                    <RecommendationPanel />
+                </>
             )}
 
             {/* Notifications */}
@@ -485,49 +332,51 @@ export const StorePage: React.FC = () => {
             {/* AI Assistant */}
             <AIAssistant />
 
-            {/* Quick Actions Bar */}
-            <div className={styles.quickActions}>
-                <button
-                    className={styles.quickActionBtn}
-                    onClick={() => setShowMinimap(!showMinimap)}
-                    title="Toggle Minimap (Ctrl+M)"
-                >
-                    🗺️
-                </button>
-                <button
-                    className={styles.quickActionBtn}
-                    onClick={toggleFullscreen}
-                    title="Toggle Fullscreen (Ctrl+F)"
-                >
-                    {isFullscreen ? '⊡' : '⛶'}
-                </button>
-                <button
-                    className={styles.quickActionBtn}
-                    onClick={() => setShowPerformance(!showPerformance)}
-                    title="Performance Monitor (Ctrl+P)"
-                >
-                    📊
-                </button>
-                <button
-                    className={styles.quickActionBtn}
-                    onClick={() => setShowCustomization(true)}
-                    title="Customize Avatar"
-                    style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)' }}
-                >
-                    🎨
-                </button>
-                <button
-                    className={styles.quickActionBtn}
-                    onClick={() => {
-                        console.log('📸 Camera button clicked, opening Style Advisor');
-                        setShowStyleAdvisor(true);
-                    }}
-                    title="AI Style Advisor - Camera"
-                    style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}
-                >
-                    📸
-                </button>
-            </div>
+            {/* Quick Actions Bar - Only in store scene */}
+            {currentScene === 'store' && (
+                <div className={styles.quickActions}>
+                    <button
+                        className={styles.quickActionBtn}
+                        onClick={toggleFullscreen}
+                        title="Toggle Fullscreen (Ctrl+F)"
+                    >
+                        {isFullscreen ? '⊡' : '⛶'}
+                    </button>
+                    <button
+                        className={styles.quickActionBtn}
+                        onClick={() => setShowPerformance(!showPerformance)}
+                        title="Performance Monitor (Ctrl+P)"
+                    >
+                        📊
+                    </button>
+                    <button
+                        className={styles.quickActionBtn}
+                        onClick={() => setShowCustomization(true)}
+                        title="Customize Avatar"
+                        style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)' }}
+                    >
+                        🎨
+                    </button>
+                    <button
+                        className={styles.quickActionBtn}
+                        onClick={() => {
+                            console.log('📸 Camera button clicked, opening Style Advisor');
+                            setShowStyleAdvisor(true);
+                        }}
+                        title="AI Style Advisor - Camera"
+                        style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}
+                    >
+                        📸
+                    </button>
+                </div>
+            )}
+
+            {/* Performance Monitor (Dev tool) */}
+            {showPerformance && (
+                <PerformanceMonitor
+                    onClose={() => setShowPerformance(false)}
+                />
+            )}
 
             {/* Player Interaction Modal */}
             {selectedPlayer && (
@@ -546,10 +395,6 @@ export const StorePage: React.FC = () => {
                     currentCustomization={avatarCustomization}
                     onApply={(custom) => {
                         setAvatarCustomization(custom);
-                        // Apply to actual avatar
-                        if (gameEngineRef.current) {
-                            gameEngineRef.current.updatePlayerCustomization(custom.bodyColor, custom.skinTone);
-                        }
                         addNotification('Avatar customized! 🎨', 'success');
                     }}
                     onClose={() => setShowCustomization(false)}
@@ -559,6 +404,13 @@ export const StorePage: React.FC = () => {
             {/* Camera Style Advisor */}
             {showStyleAdvisor && (
                 <CameraStyleAdvisor onClose={() => setShowStyleAdvisor(false)} />
+            )}
+
+            {/* Instructions overlay for 3D store */}
+            {currentScene === 'store' && (
+                <div className={styles.instructions3D}>
+                    <p>🎮 WASD - Move | Mouse - Look | Click - Interact</p>
+                </div>
             )}
         </div>
     );
