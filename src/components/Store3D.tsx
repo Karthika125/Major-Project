@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, Box, Text, Sphere, Cylinder, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
+import { useGameStore } from '../lib/store/gameStore';
 
 // Mock types for demonstration
 type Product = {
@@ -30,17 +31,40 @@ interface Store3DProps {
     onClosestProductChange?: (product: Product | null) => void;
 }
 
-// Enhanced Avatar Component with better visuals
+// Enhanced Avatar Component with animations and action indicators
 const Avatar: React.FC<{
     position: [number, number, number];
     username: string;
     isCurrentUser?: boolean;
     customization?: { bodyColor: string; skinTone: string; style: string };
-}> = ({ position, username, isCurrentUser = false, customization }) => {
+    animationState?: 'idle' | 'walking' | 'waving' | 'shopping';
+    currentAction?: 'idle' | 'walking' | 'viewing_product' | 'shopping';
+}> = ({ position, username, isCurrentUser = false, customization, animationState = 'idle', currentAction = 'idle' }) => {
+    const meshRef = useRef<THREE.Group>(null);
+    
     const colors = {
         body: customization?.bodyColor || '#4A90E2',
         skin: customization?.skinTone || '#FFD1A3',
     };
+
+    // Animate avatar based on state
+    useFrame((state) => {
+        if (!meshRef.current) return;
+        
+        const time = state.clock.elapsedTime;
+        
+        if (animationState === 'walking') {
+            // Bobbing motion while walking
+            meshRef.current.position.y = position[1] + Math.sin(time * 8) * 0.05;
+        } else if (animationState === 'waving') {
+            // Slight rotation for waving
+            meshRef.current.rotation.z = Math.sin(time * 4) * 0.1;
+        } else {
+            // Subtle idle breathing
+            meshRef.current.position.y = position[1] + Math.sin(time * 2) * 0.02;
+            meshRef.current.rotation.z = 0;
+        }
+    });
 
     if (isCurrentUser) {
         return (
@@ -70,7 +94,7 @@ const Avatar: React.FC<{
 
     // Enhanced full avatar for other players
     return (
-        <group position={position}>
+        <group ref={meshRef} position={position}>
             {/* Body with better shape */}
             <mesh position={[0, 0.15, 0]}>
                 <capsuleGeometry args={[0.08, 0.25, 8, 16]} />
@@ -93,7 +117,7 @@ const Avatar: React.FC<{
             {/* Username with background */}
             <group position={[0, 0.65, 0]}>
                 <mesh>
-                    <planeGeometry args={[username.length * 0.08, 0.15]} />
+                    <planeGeometry args={[username.length * 0.08 + 0.1, 0.15]} />
                     <meshBasicMaterial color="#000000" transparent opacity={0.6} />
                 </mesh>
                 <Text
@@ -107,10 +131,28 @@ const Avatar: React.FC<{
                 </Text>
             </group>
 
-            {/* Animated highlight ring */}
+            {/* Action indicator */}
+            {currentAction === 'viewing_product' && (
+                <group position={[0, 0.85, 0]}>
+                    <Text
+                        fontSize={0.06}
+                        color="#FFD700"
+                        anchorX="center"
+                        anchorY="middle"
+                    >
+                        🛍️
+                    </Text>
+                </group>
+            )}
+
+            {/* Animated highlight ring - color based on action */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
                 <ringGeometry args={[0.14, 0.17, 32]} />
-                <meshBasicMaterial color="#64B5F6" transparent opacity={0.5} />
+                <meshBasicMaterial 
+                    color={currentAction === 'viewing_product' ? '#FFD700' : '#64B5F6'} 
+                    transparent 
+                    opacity={0.5} 
+                />
             </mesh>
         </group>
     );
@@ -369,17 +411,39 @@ export const Store3D: React.FC<Store3DProps> = ({
 }) => {
     const [currentUserPosition, setCurrentUserPosition] = useState<[number, number, number]>([0, 1.6, 12]);
     const lastUpdateTime = useRef(0);
-    const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
+    
+    // Subscribe to real player data from game store instead of mock data
+    const otherPlayers = useGameStore((state) => state.otherPlayers);
 
-    // Simulate other players (replace with actual Supabase data)
+    // Convert database positions (2D or mixed) to 3D positions for rendering
+    const onlineUsers = useMemo(() => {
+        return otherPlayers.map(player => {
+            // Convert 2D position (x, y in pixels) to 3D position
+            // The original code used position_x and position_y as pixel coordinates (e.g., 400, 300)
+            // We need to convert them to 3D world coordinates
+            const x3d = ((player.position_x || 0) - 400) / 20; // Center at 400, scale down
+            const z3d = ((player.position_y || 0) - 300) / 20; // Center at 300, scale down
+            const y3d = player.position_z || 0; // Use Z as Y in 3D (height)
+            
+            return {
+                user_id: player.user_id,
+                username: player.username,
+                position: [x3d, 1.6, z3d] as [number, number, number],
+                avatar_customization: (player as any).avatar_customization || {
+                    bodyColor: '#4A90E2',
+                    skinTone: '#FFD1A3',
+                    style: 'casual',
+                },
+                current_action: (player as any).current_action,
+                viewing_product_id: (player as any).viewing_product_id,
+                animation_state: (player as any).animation_state,
+            };
+        });
+    }, [otherPlayers]);
+
     useEffect(() => {
-        // Mock data - replace with actual Supabase subscription
-        const mockUsers = [
-            { user_id: '1', username: 'ShopperAlex', position: [-5, 0, -6] as [number, number, number], avatar_customization: { bodyColor: '#E91E63', skinTone: '#D4A574', style: 'casual' } },
-            { user_id: '2', username: 'Sarah_M', position: [7, 0, 2] as [number, number, number], avatar_customization: { bodyColor: '#9C27B0', skinTone: '#F1C27D', style: 'casual' } },
-        ];
-        setOnlineUsers(mockUsers);
-    }, []);
+        console.log(`👥 ${onlineUsers.length} other player(s) online`);
+    }, [onlineUsers.length]);
 
     const shelfProducts = useMemo(() => {
         const perShelf = Math.ceil(products.length / 4);
@@ -393,18 +457,23 @@ export const Store3D: React.FC<Store3DProps> = ({
 
     const handlePositionUpdate = useCallback((position: [number, number, number]) => {
         const now = Date.now();
-        if (now - lastUpdateTime.current > 100) {
+        // Update at ~60fps
+        if (now - lastUpdateTime.current > 16) {
             lastUpdateTime.current = now;
             setCurrentUserPosition(position);
 
             if (presenceManager) {
+                // Convert 3D position to database format (2D with Z)
                 const x2d = position[0] * 20 + 400;
                 const y2d = position[2] * 20 + 300;
-                presenceManager.updatePosition({
+                const z = position[1];
+                
+                presenceManager.updateState({
                     position_x: x2d,
                     position_y: y2d,
+                    position_z: z,
                     direction: 'down',
-                    is_moving: true
+                    is_moving: true,
                 }).catch((err: Error) => console.error('Presence update failed', err));
             }
 
@@ -535,7 +604,12 @@ export const Store3D: React.FC<Store3DProps> = ({
             <Shelf position={[6, 0, 0]} rotation={[0, Math.PI, 0]} products={shelfProducts[3]} onProductClick={onProductClick} />
 
             {/* Current User */}
-            <Avatar position={currentUserPosition} username="You" isCurrentUser customization={avatarCustomization} />
+            <Avatar 
+                position={currentUserPosition} 
+                username="You" 
+                isCurrentUser 
+                customization={avatarCustomization} 
+            />
 
             {/* Other Online Shoppers */}
             {onlineUsers.map((user) => (
@@ -544,6 +618,8 @@ export const Store3D: React.FC<Store3DProps> = ({
                     position={user.position}
                     username={user.username}
                     customization={user.avatar_customization}
+                    animationState={user.animation_state}
+                    currentAction={user.current_action}
                 />
             ))}
 

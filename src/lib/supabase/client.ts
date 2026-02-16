@@ -31,18 +31,46 @@ export const signUp = async (
     const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+            emailRedirectTo: `${window.location.origin}/`,
+            data: {
+                username: username,
+            }
+        }
     });
 
-    if (error) throw error;
-    if (!data.user) throw new Error("User not returned");
+    if (error) {
+        console.error('❌ Signup error:', error);
+        throw error;
+    }
+    
+    if (!data.user) {
+        throw new Error("User not returned from signup");
+    }
 
-    const { error: profileError } = await supabase.from("users").insert({
-        id: data.user.id,
-        username,
-        avatar_type: "default",
-    });
+    // Check if email confirmation is required
+    // If session exists, user is auto-confirmed (email confirmation disabled)
+    // If no session, user needs to confirm email
+    if (data.session) {
+        console.log('✅ User auto-confirmed, creating profile...');
+        
+        const { error: profileError } = await supabase.from("users").insert({
+            id: data.user.id,
+            username,
+            avatar_type: "default",
+        });
 
-    if (profileError) throw profileError;
+        if (profileError) {
+            console.error('❌ Profile creation error:', profileError);
+            // If profile already exists, that's ok (might be from trigger)
+            if (profileError.code !== '23505') { // 23505 = unique violation
+                throw profileError;
+            }
+        }
+    } else {
+        console.log('⏳ Email confirmation required. Check your email inbox.');
+        console.log('💡 To disable: Dashboard → Authentication → Providers → Email → Uncheck "Confirm email"');
+    }
 
     return data;
 };
