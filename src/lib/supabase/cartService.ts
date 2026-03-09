@@ -27,6 +27,56 @@ interface AddProductToCartInput {
     quantity?: number;
 }
 
+const deriveFallbackUsername = (userId: string, email?: string | null): string => {
+    const emailPrefix = (email || '').split('@')[0]?.trim().toLowerCase();
+    const base = (emailPrefix || 'user').replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+    const safeBase = base || 'user';
+    const suffix = userId.replace(/-/g, '').slice(0, 6);
+    return `${safeBase}_${suffix}`;
+};
+
+const ensureProfileExists = async (userId: string): Promise<void> => {
+    const db = supabase as any;
+
+    const { data: profile, error: profileError } = await db
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
+
+    if (profileError) {
+        if (profileError.code === '42P01') {
+            return;
+        }
+        throw profileError;
+    }
+
+    if (profile?.id) {
+        return;
+    }
+
+    const { data: authData } = await supabase.auth.getUser();
+    const username = deriveFallbackUsername(userId, authData.user?.email);
+
+    const { error: upsertError } = await db
+        .from('profiles')
+        .upsert(
+            {
+                id: userId,
+                username,
+            },
+            { onConflict: 'id' }
+        );
+
+    if (
+        upsertError &&
+        upsertError.code !== '23505' &&
+        upsertError.code !== '42P01'
+    ) {
+        throw upsertError;
+    }
+};
+
 const mapCartItem = (row: any): StoreCartItem => {
     const product = (row.product || row.products) as Product;
 
@@ -78,6 +128,8 @@ export const getActiveCart = async (userId: string, storeId: string): Promise<{ 
 };
 
 export const getOrCreateActiveCart = async (userId: string, storeId: string): Promise<string> => {
+    await ensureProfileExists(userId);
+
     const existing = await getActiveCart(userId, storeId);
     if (existing?.id) {
         return existing.id;
