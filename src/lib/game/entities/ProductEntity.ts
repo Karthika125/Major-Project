@@ -16,12 +16,18 @@ export class ProductEntity {
     private image: HTMLImageElement | null = null;
     private imageLoaded: boolean = false;
 
-    constructor(product: Product) {
+    constructor(product: Product, positionOverride?: Vector2D) {
         this.product = product;
-        this.position = {
-            x: product.position_x,
-            y: product.position_y,
-        };
+        const hasFixedCoordinates =
+            Number.isFinite((product as any).position_x) &&
+            Number.isFinite((product as any).position_y);
+
+        this.position = positionOverride || (hasFixedCoordinates
+            ? {
+                x: (product as any).position_x,
+                y: (product as any).position_y,
+            }
+            : this.autoPosition(product, ((product as any).store_id as string) || 'default'));
 
         // Load product image
         if (product.image_url) {
@@ -47,10 +53,9 @@ export class ProductEntity {
         }
 
         // Use product ID hash to determine shelf (distribute evenly)
-        const productIdNum = product.id ?
-            (typeof product.id === 'string' ?
-                product.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) :
-                parseInt(product.id.toString()))
+        const productIdValue = String(product.id || '');
+        const productIdNum = productIdValue
+            ? productIdValue.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
             : Math.floor(Math.random() * 1000);
 
         const shelfIndex = productIdNum % shelves.length;
@@ -191,7 +196,7 @@ export class ProductEntity {
         }
 
         // Price badge (always show)
-        const priceText = `$${this.product.price}`;
+        const priceText = `₹${this.product.price}`;
         const priceWidth = ctx.measureText(priceText).width + 12;
         const priceHeight = 18;
         const priceX = screenX + this.width - priceWidth - 2;

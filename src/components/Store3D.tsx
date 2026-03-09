@@ -1,21 +1,54 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { PointerLockControls, Box, Text, Sphere, Cylinder, RoundedBox } from '@react-three/drei';
+import { PointerLockControls, Text, Sphere, Cylinder, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore } from '../lib/store/gameStore';
+import type { Database } from '../lib/supabase/types';
 
-// Mock types for demonstration
-type Product = {
-    id: string;
-    name: string;
-    price: number;
-    image_url?: string;
-    description?: string;
+type Product = Database['public']['Tables']['products']['Row'] & {
+    stock?: number | null;
+    store_id?: string;
 };
+
+interface ProductGridConfig {
+    shelvesPerRow: number;
+    productsPerShelf: number;
+    productsPerRow: number;
+    productSpacingX: number;
+    productSpacingY: number;
+    shelfSpacingX: number;
+    shelfSpacingZ: number;
+    shelfStartX: number;
+    shelfStartZ: number;
+}
+
+const PRODUCT_GRID_CONFIG: ProductGridConfig = {
+    shelvesPerRow: 2,
+    productsPerShelf: 12,
+    productsPerRow: 4,
+    productSpacingX: 1.05,
+    productSpacingY: 1,
+    shelfSpacingX: 12,
+    shelfSpacingZ: 8,
+    shelfStartX: -6,
+    shelfStartZ: -8,
+};
+
+interface ShelfLayout {
+    shelfIndex: number;
+    position: [number, number, number];
+    products: Product[];
+}
+
+interface ProductWorldPosition {
+    product: Product;
+    position: [number, number, number];
+}
 
 interface Store3DProps {
     products: Product[];
     onProductClick: (product: Product) => void;
+    onCheckoutCounterClick?: () => void;
     storeTheme: {
         accentColor: string;
         gradient: string;
@@ -168,6 +201,18 @@ const ProductBox: React.FC<{
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const meshRef = useRef<THREE.Mesh>(null);
 
+    const meshUserData = useMemo(
+        () => ({
+            productId: product.id,
+            productName: product.name,
+            productPrice: product.price,
+            productImage: product.image_url || null,
+            productStock: product.stock ?? null,
+            product,
+        }),
+        [product]
+    );
+
     useEffect(() => {
         if (product.image_url) {
             const loader = new THREE.TextureLoader();
@@ -175,7 +220,7 @@ const ProductBox: React.FC<{
                 product.image_url,
                 (tex) => setTexture(tex),
                 undefined,
-                (err) => console.warn('Image load failed for', product.name)
+                () => console.warn('Image load failed for', product.name)
             );
         }
     }, [product.image_url, product.name]);
@@ -194,6 +239,7 @@ const ProductBox: React.FC<{
                 args={[0.38, 0.45, 0.22]}
                 radius={0.02}
                 smoothness={4}
+                userData={meshUserData}
                 onClick={(e) => {
                     e.stopPropagation();
                     onClick();
@@ -246,7 +292,7 @@ const ProductBox: React.FC<{
                     fontWeight="bold"
                     anchorX="center"
                 >
-                    ${product.price}
+                    ₹{product.price}
                 </Text>
             </group>
         </group>
@@ -258,34 +304,53 @@ const Shelf: React.FC<{
     position: [number, number, number];
     rotation?: [number, number, number];
     products: Product[];
+    productsPerRow: number;
+    productSpacingX: number;
+    productSpacingY: number;
+    maxProductsPerShelf: number;
     onProductClick: (product: Product) => void;
-}> = ({ position, rotation = [0, 0, 0], products, onProductClick }) => {
+}> = ({
+    position,
+    rotation = [0, 0, 0],
+    products,
+    productsPerRow,
+    productSpacingX,
+    productSpacingY,
+    maxProductsPerShelf,
+    onProductClick,
+}) => {
+    const visibleProducts = products.slice(0, maxProductsPerShelf);
+    const shelfRows = Math.max(1, Math.ceil(maxProductsPerShelf / productsPerRow));
+    const shelfWidth = Math.max(2.6, (productsPerRow - 1) * productSpacingX + 1.1);
+    const shelfHeight = Math.max(1.8, (shelfRows - 1) * productSpacingY + 0.8);
+
     return (
         <group position={position} rotation={rotation}>
             {/* Modern shelf design */}
-            {[0, 1.0, 2.0].map((y, idx) => (
+            {Array.from({ length: shelfRows }, (_, idx) => idx * productSpacingY).map((y, idx) => (
                 <group key={idx}>
-                    <RoundedBox args={[4.2, 0.06, 0.65]} radius={0.02} position={[0, y, 0]}>
+                    <RoundedBox args={[shelfWidth, 0.06, 0.65]} radius={0.02} position={[0, y, 0]}>
                         <meshStandardMaterial color="#6D4C41" roughness={0.6} metalness={0.2} />
                     </RoundedBox>
                 </group>
             ))}
 
             {/* Back panel with gradient effect */}
-            <mesh position={[0, 1.0, -0.32]}>
-                <planeGeometry args={[4.2, 2.6]} />
+            <mesh position={[0, shelfHeight / 2, -0.32]}>
+                <planeGeometry args={[shelfWidth, shelfHeight + 0.9]} />
                 <meshStandardMaterial color="#F5F5DC" roughness={0.8} />
             </mesh>
 
             {/* Shelf lighting */}
-            <pointLight position={[0, 2.2, 0.3]} intensity={0.3} color="#FFFFFF" distance={3} />
+            <pointLight position={[0, shelfHeight + 0.7, 0.3]} intensity={0.3} color="#FFFFFF" distance={3} />
 
-            {/* Products - 4 per row, 3 rows */}
-            {products.slice(0, 12).map((product, idx) => {
-                const row = Math.floor(idx / 4);
-                const col = idx % 4;
-                const x = -1.6 + col * 1.05;
-                const y = row * 1.0 + 0.5;
+            {/* Products */}
+            {visibleProducts.map((product, idx) => {
+                const row = Math.floor(idx / productsPerRow);
+                const col = idx % productsPerRow;
+                const startX = -((productsPerRow - 1) * productSpacingX) / 2;
+                const x = startX + col * productSpacingX;
+                const y = row * productSpacingY + 0.5;
 
                 return (
                     <ProductBox
@@ -303,7 +368,8 @@ const Shelf: React.FC<{
 // Optimized Player Controller
 const PlayerController: React.FC<{
     onPositionUpdate: (position: [number, number, number]) => void;
-}> = ({ onPositionUpdate }) => {
+    collisionBoxes: Array<{ x: number; z: number; w: number; d: number }>;
+}> = ({ onPositionUpdate, collisionBoxes }) => {
     const { camera } = useThree();
     const moveState = useRef({
         forward: false,
@@ -312,19 +378,10 @@ const PlayerController: React.FC<{
         right: false,
     });
 
-    const COLLISION_BOXES = useMemo(() => [
-        { x: -6, z: -8, w: 4.5, d: 1.2 },
-        { x: 6, z: -8, w: 4.5, d: 1.2 },
-        { x: -6, z: 0, w: 4.5, d: 1.2 },
-        { x: 6, z: 0, w: 4.5, d: 1.2 },
-        { x: 0, z: -15, w: 6.8, d: 2.8 },
-        { x: 0, z: 8, w: 4, d: 4 },
-    ], []);
-
     const checkCollision = useCallback((pos: THREE.Vector3) => {
         if (Math.abs(pos.x) > 19 || Math.abs(pos.z) > 19) return true;
 
-        for (const box of COLLISION_BOXES) {
+        for (const box of collisionBoxes) {
             const halfW = box.w / 2;
             const halfD = box.d / 2;
             if (
@@ -335,7 +392,7 @@ const PlayerController: React.FC<{
             }
         }
         return false;
-    }, [COLLISION_BOXES]);
+    }, [collisionBoxes]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -404,6 +461,7 @@ const PlayerController: React.FC<{
 export const Store3D: React.FC<Store3DProps> = ({
     products,
     onProductClick,
+    onCheckoutCounterClick,
     storeTheme,
     avatarCustomization,
     presenceManager,
@@ -423,7 +481,6 @@ export const Store3D: React.FC<Store3DProps> = ({
             // We need to convert them to 3D world coordinates
             const x3d = ((player.position_x || 0) - 400) / 20; // Center at 400, scale down
             const z3d = ((player.position_y || 0) - 300) / 20; // Center at 300, scale down
-            const y3d = player.position_z || 0; // Use Z as Y in 3D (height)
             
             return {
                 user_id: player.user_id,
@@ -445,15 +502,69 @@ export const Store3D: React.FC<Store3DProps> = ({
         console.log(`👥 ${onlineUsers.length} other player(s) online`);
     }, [onlineUsers.length]);
 
-    const shelfProducts = useMemo(() => {
-        const perShelf = Math.ceil(products.length / 4);
-        return [
-            products.slice(0, perShelf),
-            products.slice(perShelf, perShelf * 2),
-            products.slice(perShelf * 2, perShelf * 3),
-            products.slice(perShelf * 3),
-        ];
+    const shelfLayouts = useMemo<ShelfLayout[]>(() => {
+        if (!products.length) return [];
+
+        const shelfCount = Math.ceil(products.length / PRODUCT_GRID_CONFIG.productsPerShelf);
+        return Array.from({ length: shelfCount }, (_, shelfIndex) => {
+            const row = Math.floor(shelfIndex / PRODUCT_GRID_CONFIG.shelvesPerRow);
+            const col = shelfIndex % PRODUCT_GRID_CONFIG.shelvesPerRow;
+
+            const start = shelfIndex * PRODUCT_GRID_CONFIG.productsPerShelf;
+            const end = start + PRODUCT_GRID_CONFIG.productsPerShelf;
+
+            return {
+                shelfIndex,
+                position: [
+                    PRODUCT_GRID_CONFIG.shelfStartX + col * PRODUCT_GRID_CONFIG.shelfSpacingX,
+                    0,
+                    PRODUCT_GRID_CONFIG.shelfStartZ + row * PRODUCT_GRID_CONFIG.shelfSpacingZ,
+                ],
+                products: products.slice(start, end),
+            };
+        });
     }, [products]);
+
+    const productWorldPositions = useMemo<ProductWorldPosition[]>(() => {
+        const positions: ProductWorldPosition[] = [];
+
+        shelfLayouts.forEach((shelf) => {
+            shelf.products.forEach((product, idx) => {
+                const row = Math.floor(idx / PRODUCT_GRID_CONFIG.productsPerRow);
+                const col = idx % PRODUCT_GRID_CONFIG.productsPerRow;
+                const startX = -((PRODUCT_GRID_CONFIG.productsPerRow - 1) * PRODUCT_GRID_CONFIG.productSpacingX) / 2;
+
+                const localX = startX + col * PRODUCT_GRID_CONFIG.productSpacingX;
+                const localY = row * PRODUCT_GRID_CONFIG.productSpacingY + 0.5;
+
+                positions.push({
+                    product,
+                    position: [
+                        shelf.position[0] + localX,
+                        localY,
+                        shelf.position[2] + 0.25,
+                    ],
+                });
+            });
+        });
+
+        return positions;
+    }, [shelfLayouts]);
+
+    const collisionBoxes = useMemo(() => {
+        const shelfWidth = Math.max(2.6, (PRODUCT_GRID_CONFIG.productsPerRow - 1) * PRODUCT_GRID_CONFIG.productSpacingX + 1.1);
+
+        return [
+            ...shelfLayouts.map((shelf) => ({
+                x: shelf.position[0],
+                z: shelf.position[2],
+                w: shelfWidth,
+                d: 1.2,
+            })),
+            { x: 0, z: -15, w: 6.8, d: 2.8 },
+            { x: 0, z: 8, w: 4, d: 4 },
+        ];
+    }, [shelfLayouts]);
 
     const handlePositionUpdate = useCallback((position: [number, number, number]) => {
         const now = Date.now();
@@ -481,23 +592,9 @@ export const Store3D: React.FC<Store3DProps> = ({
             let nearest: Product | null = null;
             let minDist = 2.5;
 
-            products.forEach((product, idx) => {
-                const shelfIdx = Math.floor(idx / Math.ceil(products.length / 4));
-                const posInShelf = idx % Math.ceil(products.length / 4);
-                const col = posInShelf % 4;
-
-                const shelfPositions = [
-                    { x: -6, z: -8 },
-                    { x: 6, z: -8 },
-                    { x: -6, z: 0 },
-                    { x: 6, z: 0 }
-                ];
-
-                const shelf = shelfPositions[shelfIdx];
-                if (!shelf) return;
-
-                const productX = shelf.x + (-1.6 + col * 1.05);
-                const productZ = shelf.z + 0.25;
+            productWorldPositions.forEach(({ product, position: productPosition }) => {
+                const productX = productPosition[0];
+                const productZ = productPosition[2];
 
                 const dist = Math.sqrt(
                     Math.pow(position[0] - productX, 2) +
@@ -512,7 +609,7 @@ export const Store3D: React.FC<Store3DProps> = ({
 
             onClosestProductChange?.(nearest);
         }
-    }, [presenceManager, products, onClosestProductChange]);
+    }, [presenceManager, productWorldPositions, onClosestProductChange]);
 
     if (!products || products.length === 0) {
         return (
@@ -576,12 +673,21 @@ export const Store3D: React.FC<Store3DProps> = ({
             </group>
 
             {/* Modern Checkout Counter */}
-            <group position={[0, 0.7, -15]}>
+            <group
+                position={[0, 0.7, -15]}
+                onClick={(event) => {
+                    event.stopPropagation();
+                    onCheckoutCounterClick?.();
+                }}
+            >
                 <RoundedBox args={[7, 1.4, 2.2]} radius={0.08}>
                     <meshStandardMaterial color={storeTheme.accentColor} roughness={0.4} metalness={0.3} />
                 </RoundedBox>
                 <Text position={[0, 1.3, 0]} fontSize={0.45} color="#FFFFFF" anchorX="center" fontWeight="bold">
                     CHECKOUT
+                </Text>
+                <Text position={[0, 0.7, 1.2]} fontSize={0.22} color="#FFFFFF" anchorX="center" fontWeight="bold">
+                    Click Counter
                 </Text>
                 <pointLight position={[0, 1.5, 0.5]} intensity={0.6} color="#FFD700" distance={4} />
             </group>
@@ -598,10 +704,18 @@ export const Store3D: React.FC<Store3DProps> = ({
             </group>
 
             {/* Shelves with Products */}
-            <Shelf position={[-6, 0, -8]} products={shelfProducts[0]} onProductClick={onProductClick} />
-            <Shelf position={[6, 0, -8]} rotation={[0, Math.PI, 0]} products={shelfProducts[1]} onProductClick={onProductClick} />
-            <Shelf position={[-6, 0, 0]} products={shelfProducts[2]} onProductClick={onProductClick} />
-            <Shelf position={[6, 0, 0]} rotation={[0, Math.PI, 0]} products={shelfProducts[3]} onProductClick={onProductClick} />
+            {shelfLayouts.map((shelf) => (
+                <Shelf
+                    key={`shelf-${shelf.shelfIndex}`}
+                    position={shelf.position}
+                    products={shelf.products}
+                    productsPerRow={PRODUCT_GRID_CONFIG.productsPerRow}
+                    productSpacingX={PRODUCT_GRID_CONFIG.productSpacingX}
+                    productSpacingY={PRODUCT_GRID_CONFIG.productSpacingY}
+                    maxProductsPerShelf={PRODUCT_GRID_CONFIG.productsPerShelf}
+                    onProductClick={onProductClick}
+                />
+            ))}
 
             {/* Current User */}
             <Avatar 
@@ -624,7 +738,7 @@ export const Store3D: React.FC<Store3DProps> = ({
             ))}
 
             {/* Controls */}
-            <PlayerController onPositionUpdate={handlePositionUpdate} />
+            <PlayerController onPositionUpdate={handlePositionUpdate} collisionBoxes={collisionBoxes} />
             <PointerLockControls />
         </>
     );

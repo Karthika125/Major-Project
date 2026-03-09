@@ -14,14 +14,12 @@ import { ChatPanel } from '../components/ChatPanel';
 import { HUD } from '../components/HUD';
 import { CheckoutModal } from '../components/CheckoutModal';
 import { AIAssistant } from '../components/AIAssistant';
-import { RecommendationPanel } from '../components/RecommendationPanel';
 import { PlayerInteraction } from '../components/PlayerInteraction';
 import { AvatarCustomization, AvatarCustomization as AvatarCustomizationType } from '../components/AvatarCustomization';
 import { NotificationSystem } from '@/components/NotificationSystem';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { PerformanceMonitor } from '@/components/PerformanceMonitor';
 import { CameraStyleAdvisor } from '../components/CameraStyleAdvisor';
-import { EntranceScene } from '../components/EntranceScene';
 import { Store3D } from '../components/Store3D';
 import { ProductProximityHUD } from '../components/ProductProximityHUD';
 import styles from './StorePage.module.css';
@@ -32,37 +30,30 @@ interface StoreTheme {
     accentColor: string;
 }
 
-const STORE_THEMES: Record<string, StoreTheme> = {
-    'hm': {
-        name: 'H&M',
-        gradient: 'linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%)',
-        accentColor: '#FF6B6B'
-    },
-    'lulu': {
-        name: 'LULU Hypermarket',
-        gradient: 'linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%)',
-        accentColor: '#4ECDC4'
-    },
-    'zara': {
-        name: 'ZARA',
-        gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        accentColor: '#667eea'
-    },
-    'sephora': {
-        name: 'Sephora',
-        gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-        accentColor: '#f093fb'
-    },
-    'nike': {
-        name: 'Nike Store',
-        gradient: 'linear-gradient(135deg, #FA8BFF 0%, #2BD2FF 90%, #2BFF88 100%)',
-        accentColor: '#FA8BFF'
-    },
-    'ikea': {
-        name: 'IKEA',
-        gradient: 'linear-gradient(135deg, #FEC163 0%, #DE4313 100%)',
-        accentColor: '#FEC163'
-    }
+const THEME_PALETTE: Array<{ accentColor: string; gradient: string }> = [
+    { accentColor: '#667eea', gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+    { accentColor: '#4ECDC4', gradient: 'linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%)' },
+    { accentColor: '#FEC163', gradient: 'linear-gradient(135deg, #FEC163 0%, #DE4313 100%)' },
+    { accentColor: '#9EC6F3', gradient: 'linear-gradient(135deg, #9EC6F3 0%, #7BA8D9 100%)' },
+    { accentColor: '#f093fb', gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' },
+    { accentColor: '#FA8BFF', gradient: 'linear-gradient(135deg, #FA8BFF 0%, #2BD2FF 90%, #2BFF88 100%)' },
+];
+
+const getThemeSeed = (value: string, modulo: number): number => {
+    return value
+        .split('')
+        .reduce((acc, char) => (acc + char.charCodeAt(0)) % modulo, 0);
+};
+
+const buildStoreTheme = (storeId: string, storeName?: string): StoreTheme => {
+    const paletteIndex = getThemeSeed(storeId, THEME_PALETTE.length);
+    const palette = THEME_PALETTE[paletteIndex];
+
+    return {
+        name: storeName?.trim() || 'Store',
+        accentColor: palette.accentColor,
+        gradient: palette.gradient,
+    };
 };
 
 export const StorePage: React.FC = () => {
@@ -72,10 +63,12 @@ export const StorePage: React.FC = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
     const { storeId } = useParams<{ storeId: string }>();
-    const storeTheme = STORE_THEMES[storeId || 'hm'] || STORE_THEMES['hm'];
 
     const [loading, setLoading] = useState(true);
     const [loadingProgress, setLoadingProgress] = useState(0);
+    const [storeTheme, setStoreTheme] = useState<StoreTheme>(() =>
+        buildStoreTheme(storeId || 'store', 'Store')
+    );
     const [showPerformance, setShowPerformance] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [notifications, setNotifications] = useState<Array<{ id: string; message: string; type: 'info' | 'success' | 'warning' | 'error' }>>([]);
@@ -92,11 +85,12 @@ export const StorePage: React.FC = () => {
     const {
         products,
         setProducts,
+        setChatMessages,
+        setOtherPlayers,
         selectedProduct,
         setSelectedProduct,
-        setIsCheckoutOpen,
         isCheckoutOpen,
-        currentScene,
+        setIsCheckoutOpen,
         setCurrentScene,
     } = useGameStore();
 
@@ -161,34 +155,76 @@ export const StorePage: React.FC = () => {
             return;
         }
 
+        setCurrentScene('store');
+        setOtherPlayers([]);
+        setChatMessages([]);
+
         const initializeStore = async () => {
             console.log('🚀 3D Store initialization started');
             setLoadingProgress(10);
 
             try {
-                // ✅ Load user profile
-                setLoadingProgress(30);
-                const { data: profiles, error: profileError } = await supabase
-                    .from('users')
-                    .select('*')
-                    .eq('id', user.id);
+                const db = supabase as any;
 
-                if (profileError || !profiles || profiles.length === 0) {
-                    console.error('❌ User profile missing', profileError);
-                    setLoading(false);
-                    addNotification('Failed to load user profile', 'error');
-                    navigate('/login');
-                    return;
+                // ✅ Load user profile (supports both legacy users and new profiles table)
+                setLoadingProgress(30);
+                let username: string | null = null;
+
+                const { data: usersProfile, error: usersError } = await db
+                    .from('users')
+                    .select('username')
+                    .eq('id', user.id)
+                    .maybeSingle();
+
+                if (!usersError && usersProfile?.username) {
+                    username = usersProfile.username;
                 }
 
-                const profile = profiles[0];
+                if (!username) {
+                    const { data: publicProfile, error: profilesError } = await db
+                        .from('profiles')
+                        .select('username')
+                        .eq('id', user.id)
+                        .maybeSingle();
+
+                    if (!profilesError && publicProfile?.username) {
+                        username = publicProfile.username;
+                    }
+                }
+
+                if (!username) {
+                    username = user.email?.split('@')[0] || 'Player';
+                    addNotification('Using fallback username for this session.', 'warning');
+                }
                 console.log('✅ Profile loaded');
                 setLoadingProgress(60);
 
-                // ✅ Load products
-                const { data: productsData, error: productError } = await supabase
+                // ✅ Load store metadata
+                setLoadingProgress(70);
+                const { data: storeData, error: storeError } = await db
+                    .from('stores')
+                    .select('id, store_name')
+                    .eq('id', storeId)
+                    .maybeSingle();
+
+                if (storeError) {
+                    throw storeError;
+                }
+
+                if (!storeData) {
+                    addNotification('Store not found', 'error');
+                    navigate('/mall');
+                    return;
+                }
+
+                setStoreTheme(buildStoreTheme(storeData.id, storeData.store_name));
+
+                // ✅ Load store products only
+                const { data: productsData, error: productError } = await db
                     .from('products')
-                    .select('*');
+                    .select('*')
+                    .eq('store_id', storeId)
+                    .order('created_at', { ascending: false });
 
                 if (productError) {
                     console.error('❌ Failed to load products', productError);
@@ -200,14 +236,14 @@ export const StorePage: React.FC = () => {
                 setLoadingProgress(80);
 
                 // 🌐 Initialize presence manager
-                const presenceManager = new PresenceManager(user.id, profile.username);
+                const presenceManager = new PresenceManager(user.id, username, storeId || 'unknown-store');
                 presenceManagerRef.current = presenceManager;
                 presenceManager.initialize().catch((err) =>
                     console.error('❌ Presence init failed', err)
                 );
 
                 // 💬 Initialize chat manager
-                const chatManager = new ChatManager(user.id, profile.username);
+                const chatManager = new ChatManager(user.id, username, storeData.id);
                 chatManagerRef.current = chatManager;
                 chatManager.initialize().catch((err) =>
                     console.error('❌ Chat init failed', err)
@@ -230,10 +266,28 @@ export const StorePage: React.FC = () => {
         initializeStore();
 
         return () => {
-            presenceManagerRef.current?.cleanup();
-            chatManagerRef.current?.cleanup();
+            void presenceManagerRef.current?.cleanup();
+            void chatManagerRef.current?.cleanup();
+            setChatMessages([]);
+            setOtherPlayers([]);
         };
-    }, [user, navigate, setProducts, addNotification, storeTheme.name]);
+    }, [user, navigate, setProducts, setChatMessages, addNotification, storeId, setCurrentScene, setOtherPlayers]);
+
+    // Handle product click in 3D store
+    const handleProductClick = useCallback((product: typeof products[0]) => {
+        if (!product) {
+            addNotification('Unable to load product details', 'warning');
+            return;
+        }
+
+        setSelectedProduct(product as any);
+        addNotification(`Viewing ${product.name}`, 'info');
+    }, [setSelectedProduct, addNotification]);
+
+    const handleCheckoutCounterClick = useCallback(() => {
+        setIsCheckoutOpen(true);
+        addNotification('Checkout counter selected. Review your invoice before confirming.', 'info');
+    }, [setIsCheckoutOpen, addNotification]);
 
     // ⏳ Enhanced loading screen
     if (loading) {
@@ -245,45 +299,25 @@ export const StorePage: React.FC = () => {
         );
     }
 
-    // Handle entrance completion
-    const handleEntranceComplete = () => {
-        setCurrentScene('store');
-        addNotification('Welcome to the store! Use WASD to move and mouse to look around.', 'info');
-    };
-
-    // Handle product click in 3D store
-    const handleProductClick = (product: typeof products[0]) => {
-        setSelectedProduct(product);
-        addNotification(`Viewing ${product.name}`, 'info');
-    };
-
     // 🏬 3D Store UI
     return (
         <div className={styles.container}>
-            {/* 3D Scene - Entrance or Store */}
-            {currentScene === 'entrance' ? (
-                <EntranceScene
-                    storeName={storeTheme.name}
+            <Canvas shadows className={styles.canvas}>
+                <PerspectiveCamera makeDefault position={[0, 1.6, 12]} fov={75} />
+                <Store3D
+                    products={products}
+                    onProductClick={handleProductClick}
+                    onCheckoutCounterClick={handleCheckoutCounterClick}
                     storeTheme={storeTheme}
-                    onComplete={handleEntranceComplete}
+                    avatarCustomization={avatarCustomization}
+                    presenceManager={presenceManagerRef.current}
+                    onPlayerSelect={setSelectedPlayer}
+                    onClosestProductChange={setClosestProduct}
                 />
-            ) : (
-                <Canvas shadows className={styles.canvas}>
-                    <PerspectiveCamera makeDefault position={[0, 1.6, 12]} fov={75} />
-                    <Store3D
-                        products={products}
-                        onProductClick={handleProductClick}
-                        storeTheme={storeTheme}
-                        avatarCustomization={avatarCustomization}
-                        presenceManager={presenceManagerRef.current}
-                        onPlayerSelect={setSelectedPlayer}
-                        onClosestProductChange={setClosestProduct}
-                    />
-                </Canvas>
-            )}
+            </Canvas>
 
             {/* Product Proximity HUD */}
-            {currentScene === 'store' && <ProductProximityHUD product={closestProduct} />}
+            <ProductProximityHUD product={closestProduct} />
 
 
             {/* Back to Mall Button */}
@@ -301,20 +335,16 @@ export const StorePage: React.FC = () => {
                 <span className={styles.storeName}>{storeTheme.name}</span>
             </div>
 
-            {/* Core UI Components - Only show in store scene */}
-            {currentScene === 'store' && (
-                <>
-                    <HUD />
+            <>
+                <HUD />
 
-                    <ChatPanel
-                        chatManager={chatManagerRef.current}
-                        inputManager={null}
-                    />
+                <ChatPanel
+                    chatManager={chatManagerRef.current}
+                    inputManager={null}
+                />
 
-                    <CartPanel />
-                    <RecommendationPanel />
-                </>
-            )}
+                <CartPanel />
+            </>
 
             {/* Notifications */}
             <NotificationSystem notifications={notifications} />
@@ -332,44 +362,41 @@ export const StorePage: React.FC = () => {
             {/* AI Assistant */}
             <AIAssistant />
 
-            {/* Quick Actions Bar - Only in store scene */}
-            {currentScene === 'store' && (
-                <div className={styles.quickActions}>
-                    <button
-                        className={styles.quickActionBtn}
-                        onClick={toggleFullscreen}
-                        title="Toggle Fullscreen (Ctrl+F)"
-                    >
-                        {isFullscreen ? '⊡' : '⛶'}
-                    </button>
-                    <button
-                        className={styles.quickActionBtn}
-                        onClick={() => setShowPerformance(!showPerformance)}
-                        title="Performance Monitor (Ctrl+P)"
-                    >
-                        📊
-                    </button>
-                    <button
-                        className={styles.quickActionBtn}
-                        onClick={() => setShowCustomization(true)}
-                        title="Customize Avatar"
-                        style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)' }}
-                    >
-                        🎨
-                    </button>
-                    <button
-                        className={styles.quickActionBtn}
-                        onClick={() => {
-                            console.log('📸 Camera button clicked, opening Style Advisor');
-                            setShowStyleAdvisor(true);
-                        }}
-                        title="AI Style Advisor - Camera"
-                        style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}
-                    >
-                        📸
-                    </button>
-                </div>
-            )}
+            <div className={styles.quickActions}>
+                <button
+                    className={styles.quickActionBtn}
+                    onClick={toggleFullscreen}
+                    title="Toggle Fullscreen (Ctrl+F)"
+                >
+                    {isFullscreen ? '⊡' : '⛶'}
+                </button>
+                <button
+                    className={styles.quickActionBtn}
+                    onClick={() => setShowPerformance(!showPerformance)}
+                    title="Performance Monitor (Ctrl+P)"
+                >
+                    📊
+                </button>
+                <button
+                    className={styles.quickActionBtn}
+                    onClick={() => setShowCustomization(true)}
+                    title="Customize Avatar"
+                    style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)' }}
+                >
+                    🎨
+                </button>
+                {/*<button
+                    className={styles.quickActionBtn}
+                    onClick={() => {
+                        console.log('📸 Camera button clicked, opening Style Advisor');
+                        setShowStyleAdvisor(true);
+                    }}
+                    title="AI Style Advisor - Camera"
+                    style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}
+                >
+                    📸
+                </button>*/}
+            </div>
 
             {/* Performance Monitor (Dev tool) */}
             {showPerformance && (
@@ -406,12 +433,9 @@ export const StorePage: React.FC = () => {
                 <CameraStyleAdvisor onClose={() => setShowStyleAdvisor(false)} />
             )}
 
-            {/* Instructions overlay for 3D store */}
-            {currentScene === 'store' && (
-                <div className={styles.instructions3D}>
-                    <p>🎮 WASD - Move | Mouse - Look | Click - Interact</p>
-                </div>
-            )}
+            <div className={styles.instructions3D}>
+                <p>🎮 WASD - Move | Mouse - Look | Click - Interact</p>
+            </div>
         </div>
     );
 };

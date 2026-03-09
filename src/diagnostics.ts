@@ -47,17 +47,27 @@ async function runDiagnostics() {
     try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-            const { data: profile, error: profileError } = await supabase
+            const db = supabase as any;
+
+            const { data: profile, error: profileError } = await db
                 .from('users')
                 .select('*')
                 .eq('id', user.id);
 
-            if (profileError) {
-                console.error('❌ User profile error:', profileError);
-            } else if (profile && profile.length > 0) {
+            if (!profileError && profile && profile.length > 0) {
                 console.log('✅ User profile found:', (profile[0] as any).username);
             } else {
-                console.warn('⚠️ User profile not found in users table');
+                const { data: publicProfile, error: publicProfileError } = await db
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', user.id)
+                    .maybeSingle();
+
+                if (!publicProfileError && publicProfile?.username) {
+                    console.log('✅ User profile found in profiles table:', publicProfile.username);
+                } else {
+                    console.warn('⚠️ User profile not found in users/profiles tables');
+                }
             }
         }
     } catch (error) {

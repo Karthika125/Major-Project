@@ -78,7 +78,7 @@ export const useGameStore = create<GameState>((set) => ({
                 return {
                     cartItems: state.cartItems.map((i) =>
                         i.product_id === item.product_id
-                            ? { ...i, quantity: i.quantity + item.quantity }
+                            ? { ...i, ...item, quantity: item.quantity }
                             : i
                     ),
                 };

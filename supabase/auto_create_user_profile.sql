@@ -4,22 +4,46 @@
 -- Function to handle new user creation
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  base_username TEXT;
+  safe_username TEXT;
+  suffix TEXT;
 BEGIN
+  base_username := COALESCE(
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'username'), ''),
+    split_part(NEW.email, '@', 1),
+    'user'
+  );
+
+  base_username := lower(base_username);
+  base_username := regexp_replace(base_username, '[^a-z0-9_]+', '_', 'g');
+  base_username := trim(both '_' from base_username);
+
+  IF base_username = '' THEN
+    base_username := 'user';
+  END IF;
+
+  suffix := substr(replace(NEW.id::text, '-', ''), 1, 6);
+  safe_username := base_username;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.users u
+    WHERE u.username = safe_username
+      AND u.id <> NEW.id
+  ) THEN
+    safe_username := base_username || '_' || suffix;
+  END IF;
+
   -- Insert user profile with username from metadata or email
   INSERT INTO public.users (id, username, avatar_type)
   VALUES (
     NEW.id,
-    COALESCE(
-      NEW.raw_user_meta_data->>'username',
-      split_part(NEW.email, '@', 1)
-    ),
+    safe_username,
     'default'
   )
   ON CONFLICT (id) DO UPDATE SET
-    username = COALESCE(
-      NEW.raw_user_meta_data->>'username',
-      split_part(NEW.email, '@', 1)
-    ),
+    username = EXCLUDED.username,
     updated_at = NOW();
   
   RETURN NEW;

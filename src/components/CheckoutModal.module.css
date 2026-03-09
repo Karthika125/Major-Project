@@ -72,6 +72,16 @@
     margin: 0 0 24px 0;
 }
 
+.error {
+    background: rgba(244, 67, 54, 0.1);
+    border: 1px solid rgba(244, 67, 54, 0.25);
+    color: #b71c1c;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    margin: 0 0 16px;
+}
+
 .section {
     margin-bottom: 24px;
 }
@@ -161,6 +171,38 @@
 }
 
 .checkoutButton:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.actionRow {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.actionRow .checkoutButton {
+    flex: 1;
+}
+
+.secondaryButton {
+    min-width: 110px;
+    padding: 14px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(102, 126, 234, 0.35);
+    background: #fff;
+    color: #4a5568;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.secondaryButton:hover:not(:disabled) {
+    background: #f7fafc;
+}
+
+.secondaryButton:disabled {
     opacity: 0.6;
     cursor: not-allowed;
 }

@@ -5,6 +5,9 @@ import { LoginPage } from './pages/LoginPage';
 import { MallPage } from './pages/MallPage';
 import { StorePage } from './pages/StorePage';
 import { AdminPage } from './pages/AdminPage';
+import { CreateStorePage } from './pages/CreateStorePage';
+import { StoreDashboardPage } from './pages/StoreDashboardPage';
+import { ProfilePage } from './pages/ProfilePage';
 import './App.css';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -41,6 +44,30 @@ function App() {
                         element={
                             <ProtectedRoute>
                                 <StorePage />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/profile"
+                        element={
+                            <ProtectedRoute>
+                                <ProfilePage />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/stores/create"
+                        element={
+                            <ProtectedRoute>
+                                <CreateStorePage />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/stores/:storeId/dashboard"
+                        element={
+                            <ProtectedRoute>
+                                <StoreDashboardPage />
                             </ProtectedRoute>
                         }
                     />

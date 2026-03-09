@@ -67,7 +67,7 @@ export const RecommendationPanel: React.FC = () => {
                         <div className={styles.icon}>📦</div>
                         <div className={styles.info}>
                             <div className={styles.name}>{product.name}</div>
-                            <div className={styles.price}>${product.price}</div>
+                            <div className={styles.price}>₹{product.price}</div>
                         </div>
                     </div>
                 ))}

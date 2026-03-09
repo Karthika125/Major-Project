@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase/client';
+import { uploadProductImage, deleteProductImage } from '../lib/supabase/productStorage';
 import styles from './AdminPage.module.css';
 
 interface Product {
     id: string;
+    store_id?: string;
     name: string;
     description?: string;
     price: number;
     category: string;
-    image_url: string;
+    image_url?: string;
     position_x: number;
     position_y: number;
     created_at: string;
@@ -17,11 +19,15 @@ interface Product {
 interface Order {
     id: string;
     user_id: string;
-    total: number;
+    total?: number;
+    total_price?: number;
     status: string;
-    items: any; // JSONB
+    items?: any;
     created_at: string;
     users?: {
+        username: string;
+    };
+    profiles?: {
         username: string;
     };
 }
@@ -44,6 +50,8 @@ export const AdminPage: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+    const [isUploadingImage, setIsUploadingImage] = useState(false);
 
     const [stats, setStats] = useState({
         totalProducts: 0,
@@ -53,6 +61,7 @@ export const AdminPage: React.FC = () => {
     });
 
     const [formData, setFormData] = useState({
+        store_id: '',
         name: '',
         description: '',
         price: '',
@@ -61,6 +70,11 @@ export const AdminPage: React.FC = () => {
         position_x: '0',
         position_y: '0'
     });
+
+    const resolveOrderTotal = (order: Partial<Order>): number => {
+        const total = Number((order as any).total_price ?? (order as any).total ?? 0);
+        return Number.isFinite(total) ? total : 0;
+    };
 
     // Handle login
     const handleLogin = (e: React.FormEvent) => {
@@ -83,20 +97,38 @@ export const AdminPage: React.FC = () => {
 
     const loadStats = async () => {
         try {
-            const [productsRes, ordersRes, usersRes] = await Promise.all([
-                supabase.from('products').select('*', { count: 'exact', head: true }),
-                supabase.from('orders').select('total, status'),
-                supabase.from('users').select('*', { count: 'exact', head: true })
+            const db = supabase as any;
+            const [productsRes, ordersRes, profilesRes] = await Promise.all([
+                db.from('products').select('*', { count: 'exact', head: true }),
+                db.from('orders').select('*'),
+                db.from('profiles').select('*', { count: 'exact', head: true })
             ]);
 
-            const completedOrders = ordersRes.data?.filter(o => o.status === 'completed') || [];
-            const totalRevenue = completedOrders.reduce((sum, order) => sum + order.total, 0);
+            if (productsRes.error) throw productsRes.error;
+            if (ordersRes.error) throw ordersRes.error;
+
+            let totalUsers = profilesRes.count || 0;
+            if (profilesRes.error) {
+                const { count: usersCount, error: usersError } = await supabase
+                    .from('users')
+                    .select('*', { count: 'exact', head: true });
+
+                if (!usersError) {
+                    totalUsers = usersCount || 0;
+                }
+            }
+
+            const allOrders = ordersRes.data || [];
+            const completedOrders = allOrders.filter((order: any) =>
+                ['completed', 'paid', 'fulfilled'].includes(String(order.status || '').toLowerCase())
+            );
+            const totalRevenue = completedOrders.reduce((sum: number, order: any) => sum + resolveOrderTotal(order), 0);
 
             setStats({
                 totalProducts: productsRes.count || 0,
-                totalOrders: completedOrders.length,
+                totalOrders: allOrders.length,
                 totalRevenue,
-                totalUsers: usersRes.count || 0
+                totalUsers,
             });
         } catch (error) {
             console.error('Error loading stats:', error);
@@ -135,17 +167,76 @@ export const AdminPage: React.FC = () => {
     // Load orders
     const loadOrders = async () => {
         try {
-            const { data, error } = await supabase
+            const db = supabase as any;
+            const { data: orderRows, error } = await db
                 .from('orders')
-                .select(`
-                    *,
-                    users:user_id (username)
-                `)
+                .select('*')
                 .order('created_at', { ascending: false })
                 .limit(50);
 
             if (error) throw error;
-            setOrders(data || []);
+
+            const safeRows = orderRows || [];
+            const orderIds: string[] = safeRows.map((order: any) => order.id);
+            const userIds: string[] = Array.from(
+                new Set(safeRows.map((order: any) => order.user_id).filter(Boolean))
+            );
+
+            const itemsByOrder = new Map<string, any[]>();
+
+            if (orderIds.length > 0) {
+                const { data: orderItemRows, error: orderItemsError } = await db
+                    .from('order_items')
+                    .select('order_id, product_name, quantity')
+                    .in('order_id', orderIds);
+
+                if (!orderItemsError) {
+                    (orderItemRows || []).forEach((row: any) => {
+                        if (!itemsByOrder.has(row.order_id)) {
+                            itemsByOrder.set(row.order_id, []);
+                        }
+
+                        itemsByOrder.get(row.order_id)!.push(row);
+                    });
+                }
+            }
+
+            const usernamesByUserId = new Map<string, string>();
+
+            if (userIds.length > 0) {
+                const { data: profileRows, error: profilesError } = await db
+                    .from('profiles')
+                    .select('id, username')
+                    .in('id', userIds);
+
+                if (!profilesError) {
+                    (profileRows || []).forEach((row: any) => {
+                        usernamesByUserId.set(row.id, row.username);
+                    });
+                } else {
+                    const { data: userRows, error: usersError } = await db
+                        .from('users')
+                        .select('id, username')
+                        .in('id', userIds);
+
+                    if (!usersError) {
+                        (userRows || []).forEach((row: any) => {
+                            usernamesByUserId.set(row.id, row.username);
+                        });
+                    }
+                }
+            }
+
+            const normalizedOrders: Order[] = safeRows.map((row: any) => ({
+                ...row,
+                total: resolveOrderTotal(row),
+                items: itemsByOrder.get(row.id) || row.items || [],
+                users: {
+                    username: usernamesByUserId.get(row.user_id) || 'Unknown',
+                },
+            }));
+
+            setOrders(normalizedOrders);
         } catch (error) {
             console.error('Error loading orders:', error);
         }
@@ -156,12 +247,28 @@ export const AdminPage: React.FC = () => {
         e.preventDefault();
 
         try {
+            const storeId = formData.store_id.trim();
+            if (!storeId) {
+                throw new Error('Store ID is required.');
+            }
+
+            const generatedProductId = crypto.randomUUID();
+            let imageUrl = formData.image_url.trim() || null;
+
+            if (selectedImageFile) {
+                setIsUploadingImage(true);
+                const uploadResult = await uploadProductImage(selectedImageFile, storeId, generatedProductId);
+                imageUrl = uploadResult.publicUrl;
+            }
+
             const { error } = await supabase.from('products').insert([{
+                id: generatedProductId,
+                store_id: storeId,
                 name: formData.name,
                 description: formData.description || null,
                 price: parseFloat(formData.price),
                 category: formData.category,
-                image_url: formData.image_url,
+                image_url: imageUrl,
                 position_x: parseInt(formData.position_x),
                 position_y: parseInt(formData.position_y)
             }]);
@@ -176,6 +283,8 @@ export const AdminPage: React.FC = () => {
         } catch (error: any) {
             console.error('Error adding product:', error);
             alert(`Failed to add product: ${error.message}`);
+        } finally {
+            setIsUploadingImage(false);
         }
     };
 
@@ -185,20 +294,42 @@ export const AdminPage: React.FC = () => {
         if (!editingProduct) return;
 
         try {
+            const storeId = (formData.store_id || editingProduct.store_id || '').trim();
+            if (!storeId) {
+                throw new Error('Store ID is required to update this product.');
+            }
+
+            let imageUrl = formData.image_url.trim() || null;
+
+            if (selectedImageFile) {
+                setIsUploadingImage(true);
+                const uploadResult = await uploadProductImage(selectedImageFile, storeId, editingProduct.id);
+                imageUrl = uploadResult.publicUrl;
+            }
+
             const { error } = await supabase
                 .from('products')
                 .update({
+                    store_id: storeId,
                     name: formData.name,
                     description: formData.description || null,
                     price: parseFloat(formData.price),
                     category: formData.category,
-                    image_url: formData.image_url,
+                    image_url: imageUrl,
                     position_x: parseInt(formData.position_x),
                     position_y: parseInt(formData.position_y)
                 })
                 .eq('id', editingProduct.id);
 
             if (error) throw error;
+
+            if (selectedImageFile && editingProduct.image_url && editingProduct.image_url !== imageUrl) {
+                try {
+                    await deleteProductImage(editingProduct.image_url);
+                } catch (deleteError) {
+                    console.warn('Updated product but failed to delete previous image:', deleteError);
+                }
+            }
 
             alert('Product updated successfully!');
             setEditingProduct(null);
@@ -207,11 +338,13 @@ export const AdminPage: React.FC = () => {
         } catch (error: any) {
             console.error('Error updating product:', error);
             alert(`Failed to update product: ${error.message}`);
+        } finally {
+            setIsUploadingImage(false);
         }
     };
 
     // Delete product
-    const handleDeleteProduct = async (productId: string, productName: string) => {
+    const handleDeleteProduct = async (productId: string, productName: string, imageUrl?: string) => {
         if (!confirm(`Are you sure you want to delete "${productName}"?`)) return;
 
         try {
@@ -221,6 +354,14 @@ export const AdminPage: React.FC = () => {
                 .eq('id', productId);
 
             if (error) throw error;
+
+            if (imageUrl) {
+                try {
+                    await deleteProductImage(imageUrl);
+                } catch (deleteError) {
+                    console.warn('Product deleted, but image delete failed:', deleteError);
+                }
+            }
 
             alert('Product deleted successfully!');
             loadProducts();
@@ -234,19 +375,23 @@ export const AdminPage: React.FC = () => {
     // Edit product
     const startEditProduct = (product: Product) => {
         setEditingProduct(product);
+        setSelectedImageFile(null);
         setFormData({
+            store_id: product.store_id || '',
             name: product.name,
             description: product.description || '',
             price: product.price.toString(),
             category: product.category,
-            image_url: product.image_url,
+            image_url: product.image_url || '',
             position_x: product.position_x.toString(),
             position_y: product.position_y.toString()
         });
     };
 
     const resetForm = () => {
+        setSelectedImageFile(null);
         setFormData({
+            store_id: '',
             name: '',
             description: '',
             price: '',
@@ -342,7 +487,7 @@ export const AdminPage: React.FC = () => {
                 <div className={styles.statCard} style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' }}>
                     <div className={styles.statIcon}>💰</div>
                     <div className={styles.statInfo}>
-                        <h3>${stats.totalRevenue.toFixed(2)}</h3>
+                        <h3>₹{stats.totalRevenue.toFixed(2)}</h3>
                         <p>Total Revenue</p>
                     </div>
                 </div>
@@ -422,18 +567,19 @@ export const AdminPage: React.FC = () => {
                                 <div className={styles.productsGrid}>
                                     {filteredProducts.map(product => (
                                         <div key={product.id} className={styles.productCard}>
-                                            <img src={product.image_url} alt={product.name} />
+                                            <img src={product.image_url || ''} alt={product.name} />
                                             <div className={styles.productInfo}>
                                                 <h4>{product.name}</h4>
                                                 <p className={styles.category}>{product.category}</p>
-                                                <p className={styles.price}>${product.price.toFixed(2)}</p>
+                                                <p className={styles.price}>₹{product.price.toFixed(2)}</p>
+                                                {product.store_id && <p className={styles.position}>Store: {product.store_id}</p>}
                                                 <p className={styles.position}>Position: ({product.position_x}, {product.position_y})</p>
                                             </div>
                                             <div className={styles.productActions2}>
                                                 <button onClick={() => startEditProduct(product)} className={styles.editBtn2}>
                                                     ✏️ Edit
                                                 </button>
-                                                <button onClick={() => handleDeleteProduct(product.id, product.name)} className={styles.deleteBtn2}>
+                                                <button onClick={() => handleDeleteProduct(product.id, product.name, product.image_url)} className={styles.deleteBtn2}>
                                                     🗑️ Delete
                                                 </button>
                                             </div>
@@ -488,14 +634,14 @@ export const AdminPage: React.FC = () => {
                                                 {Array.isArray(order.items) ? (
                                                     order.items.map((item: any, idx: number) => (
                                                         <div key={idx} className={styles.orderItem}>
-                                                            {item.name} (x{item.quantity})
+                                                            {item.name || item.product_name || 'Item'} (x{item.quantity ?? 1})
                                                         </div>
                                                     ))
                                                 ) : (
                                                     <div className={styles.orderItem}>-</div>
                                                 )}
                                             </td>
-                                            <td className={styles.total}>${order.total.toFixed(2)}</td>
+                                            <td className={styles.total}>₹{resolveOrderTotal(order).toFixed(2)}</td>
                                             <td>
                                                 <span className={`${styles.status} ${styles[order.status]}`}>
                                                     {order.status}
@@ -518,6 +664,17 @@ export const AdminPage: React.FC = () => {
                         <h2>{editingProduct ? '✏️ Edit Product' : '➕ Add New Product'}</h2>
 
                         <form onSubmit={editingProduct ? handleUpdateProduct : handleAddProduct}>
+                            <div className={styles.formGroup}>
+                                <label>Store ID *</label>
+                                <input
+                                    type="text"
+                                    value={formData.store_id}
+                                    onChange={(e) => setFormData({ ...formData, store_id: e.target.value })}
+                                    placeholder="Store UUID"
+                                    required
+                                />
+                            </div>
+
                             <div className={styles.formGroup}>
                                 <label>Product Name *</label>
                                 <input
@@ -555,13 +712,21 @@ export const AdminPage: React.FC = () => {
                             </div>
 
                             <div className={styles.formGroup}>
-                                <label>Image URL *</label>
+                                <label>Product Image File</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => setSelectedImageFile(e.target.files?.[0] || null)}
+                                />
+                            </div>
+
+                            <div className={styles.formGroup}>
+                                <label>Image URL (optional fallback)</label>
                                 <input
                                     type="url"
                                     value={formData.image_url}
                                     onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
                                     placeholder="https://example.com/image.jpg"
-                                    required
                                 />
                             </div>
 
@@ -589,8 +754,8 @@ export const AdminPage: React.FC = () => {
                             </div>
 
                             <div className={styles.modalActions}>
-                                <button type="submit" className={styles.submitBtn}>
-                                    {editingProduct ? 'Update Product' : 'Add Product'}
+                                <button type="submit" className={styles.submitBtn} disabled={isUploadingImage}>
+                                    {isUploadingImage ? 'Uploading Image...' : editingProduct ? 'Update Product' : 'Add Product'}
                                 </button>
                                 <button type="button" onClick={() => { setShowAddModal(false); setEditingProduct(null); resetForm(); }} className={styles.cancelBtn}>
                                     Cancel

@@ -1,0 +1,104 @@
+.section {
+    width: 100%;
+    display: grid;
+    gap: 14px;
+}
+
+.title {
+    margin: 0;
+    color: #333;
+    font-size: 24px;
+    font-weight: 800;
+}
+
+.status {
+    margin: 0;
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(255, 241, 213, 0.4);
+    border: 1px solid rgba(158, 198, 243, 0.35);
+    color: #555;
+}
+
+.error {
+    margin: 0;
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(244, 67, 54, 0.1);
+    border: 1px solid rgba(244, 67, 54, 0.25);
+    color: #b71c1c;
+}
+
+.orderList {
+    display: grid;
+    gap: 14px;
+}
+
+.orderCard {
+    border: 1px solid rgba(158, 198, 243, 0.35);
+    border-radius: 12px;
+    background: #fff;
+    padding: 14px;
+    display: grid;
+    gap: 8px;
+}
+
+.metaRow {
+    color: #333;
+    font-size: 14px;
+}
+
+.itemsWrap {
+    margin-top: 4px;
+    display: grid;
+    gap: 8px;
+}
+
+.itemsTitle {
+    margin: 0;
+    font-size: 16px;
+    color: #333;
+}
+
+.noItems {
+    margin: 0;
+    font-size: 14px;
+    color: #666;
+}
+
+.itemsList {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 8px;
+}
+
+.itemRow {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    border: 1px solid rgba(158, 198, 243, 0.25);
+    border-radius: 10px;
+    padding: 10px;
+    background: #fafcff;
+}
+
+.itemName {
+    color: #333;
+    font-weight: 600;
+}
+
+.itemMeta {
+    color: #555;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+@media (max-width: 720px) {
+    .itemRow {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+}

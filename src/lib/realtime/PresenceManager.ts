@@ -22,6 +22,7 @@ export class PresenceManager {
     private channel: RealtimeChannel | null = null;
     private userId: string;
     private username: string;
+    private storeId: string;
     private updateInterval: NodeJS.Timeout | null = null;
     private lastRealtimeUpdate: number = 0;
     private lastDbUpdate: number = 0;
@@ -33,15 +34,16 @@ export class PresenceManager {
     private reconnectAttempts: number = 0;
     private readonly MAX_RECONNECT_ATTEMPTS = 5;
 
-    constructor(userId: string, username: string) {
+    constructor(userId: string, username: string, storeId: string) {
         this.userId = userId;
         this.username = username;
+        this.storeId = storeId;
     }
 
     async initialize(): Promise<void> {
         try {
             // Subscribe to presence channel with auto-reconnect
-            this.channel = supabase.channel('store-presence', {
+            this.channel = supabase.channel(`store-presence-${this.storeId}`, {
                 config: {
                     presence: {
                         key: this.userId,
@@ -58,7 +60,7 @@ export class PresenceManager {
                 .on('presence', { event: 'join' }, ({ newPresences }) => {
                     console.log('👋 Player joined:', newPresences);
                     newPresences.forEach((presence: any) => {
-                        if (presence.user_id !== this.userId) {
+                        if (presence.user_id !== this.userId && (!presence.store_id || presence.store_id === this.storeId)) {
                             useGameStore.getState().updatePlayerPosition(presence.user_id, presence);
                         }
                     });
@@ -96,7 +98,7 @@ export class PresenceManager {
 
             // Subscribe to database changes for persistence fallback
             supabase
-                .channel('user_presence_db')
+                .channel(`user_presence_db_${this.storeId}`)
                 .on(
                     'postgres_changes',
                     {
@@ -111,18 +113,8 @@ export class PresenceManager {
                 )
                 .subscribe();
 
-            // Load existing users from database (initial snapshot)
-            const { data: existingUsers, error: fetchError } = await supabase
-                .from('user_presence')
-                .select('*')
-                .neq('user_id', this.userId);
-
-            if (fetchError) {
-                console.error('❌ Failed to load existing users:', fetchError);
-            } else if (existingUsers && existingUsers.length > 0) {
-                console.log(`✅ Loaded ${existingUsers.length} existing players`);
-                useGameStore.getState().setOtherPlayers(existingUsers);
-            }
+            // Keep presence scoped to realtime store channel to avoid cross-store bleed.
+            useGameStore.getState().setOtherPlayers([]);
         } catch (error) {
             console.error('❌ Presence initialization failed:', error);
             throw error;
@@ -151,7 +143,10 @@ export class PresenceManager {
         Object.keys(state).forEach((key) => {
             const presences = state[key];
             presences.forEach((presence: any) => {
-                if (presence.user_id !== this.userId) {
+                if (
+                    presence.user_id !== this.userId &&
+                    (!presence.store_id || presence.store_id === this.storeId)
+                ) {
                     players.push(presence);
                 }
             });
@@ -172,6 +167,7 @@ export class PresenceManager {
                 await this.channel.track({
                     user_id: this.userId,
                     username: this.username,
+                    store_id: this.storeId,
                     ...data,
                     online_at: new Date().toISOString(),
                 });

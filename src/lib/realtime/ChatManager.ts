@@ -4,6 +4,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export interface ChatMessage {
     id: string;
+    store_id?: string | null;
     user_id: string;
     username: string;
     message: string;
@@ -17,48 +18,42 @@ export interface ChatMessage {
 
 export class ChatManager {
     private channel: RealtimeChannel | null = null;
+    private proximityChannel: RealtimeChannel | null = null;
     private userId: string;
     private username: string;
+    private storeId: string;
     private proximityMessages: Map<string, ChatMessage> = new Map();
     private readonly PROXIMITY_RADIUS = 5.0; // units in 3D space
     private readonly MESSAGE_LIFETIME = 30000; // 30 seconds for proximity messages
 
-    constructor(userId: string, username: string) {
+    constructor(userId: string, username: string, storeId: string) {
         this.userId = userId;
         this.username = username;
+        this.storeId = storeId;
     }
 
     async initialize(): Promise<void> {
-        console.log('💬 Initializing chat manager...');
+        console.log(`💬 Initializing chat manager for store ${this.storeId}...`);
+        useGameStore.getState().setChatMessages([]);
+        this.clearProximityMessages();
         
         try {
-            // Load recent persistent messages (global chat)
-            const { data: messages, error: fetchError } = await supabase
-                .from('chat_messages')
-                .select('*')
-                .order('created_at', { ascending: true })
-                .limit(50);
-
-            if (fetchError) {
-                console.error('❌ Failed to load chat messages:', fetchError);
-            } else if (messages) {
-                useGameStore.getState().setChatMessages(messages);
-                console.log(`✅ Loaded ${messages.length} chat messages`);
-            }
-
-            // Subscribe to persistent chat (database)
+            // Store-scoped live chat only (no history load)
             this.channel = supabase
-                .channel('chat-messages')
+                .channel(`chat-messages-${this.storeId}`)
                 .on(
                     'postgres_changes',
                     {
                         event: 'INSERT',
                         schema: 'public',
                         table: 'chat_messages',
+                        filter: `store_id=eq.${this.storeId}`,
                     },
                     (payload) => {
-                        const message = payload.new as any;
-                        useGameStore.getState().addChatMessage(message);
+                        const message = payload.new as ChatMessage;
+                        if (!message.store_id || message.store_id === this.storeId) {
+                            useGameStore.getState().addChatMessage(message as any);
+                        }
                     }
                 )
                 .subscribe((status) => {
@@ -70,8 +65,8 @@ export class ChatManager {
                 });
 
             // Subscribe to proximity chat (realtime broadcast only)
-            supabase
-                .channel('proximity-chat')
+            this.proximityChannel = supabase
+                .channel(`proximity-chat-${this.storeId}`)
                 .on('broadcast', { event: 'proximity-message' }, (payload) => {
                     this.handleProximityMessage(payload.payload as ChatMessage);
                 })
@@ -84,6 +79,8 @@ export class ChatManager {
     }
 
     private handleProximityMessage(message: ChatMessage): void {
+        if (message.store_id && message.store_id !== this.storeId) return;
+
         // Ignore our own messages
         if (message.user_id === this.userId) return;
 
@@ -126,10 +123,6 @@ export class ChatManager {
         const currentUser = useGameStore.getState().currentUser;
         if (!currentUser) return false;
 
-        // Get current player position from presence manager or store
-        // For now, we'll get it from the first other player (this should be improved)
-        const otherPlayers = useGameStore.getState().otherPlayers;
-        
         // Calculate distance (simplified - should use actual player position)
         // This is a placeholder - the actual position should come from the game state
         const distance = Math.sqrt(
@@ -144,7 +137,8 @@ export class ChatManager {
     // Send persistent global message (saved to database)
     async sendMessage(message: string, position?: { x: number; y: number }): Promise<void> {
         try {
-            const { error } = await supabase.from('chat_messages').insert({
+            const { error } = await (supabase as any).from('chat_messages').insert({
+                store_id: this.storeId,
                 user_id: this.userId,
                 username: this.username,
                 message,
@@ -173,6 +167,7 @@ export class ChatManager {
         try {
             const chatMessage: ChatMessage = {
                 id: `temp-${Date.now()}-${Math.random()}`,
+                store_id: this.storeId,
                 user_id: this.userId,
                 username: this.username,
                 message,
@@ -185,7 +180,7 @@ export class ChatManager {
             };
 
             // Broadcast via realtime (no database)
-            await supabase.channel('proximity-chat').send({
+            await this.proximityChannel?.send({
                 type: 'broadcast',
                 event: 'proximity-message',
                 payload: chatMessage,
@@ -216,10 +211,11 @@ export class ChatManager {
         const currentPosition = { x: 0, y: 1.6, z: 12 };
 
         otherPlayers.forEach(player => {
+            const playerPositionZ = (player as any).position_z || 0;
             const distance = Math.sqrt(
                 Math.pow((player.position_x || 0) - currentPosition.x, 2) +
                 Math.pow((player.position_y || 1.6) - currentPosition.y, 2) +
-                Math.pow((player.position_z || 0) - currentPosition.z, 2)
+                Math.pow(playerPositionZ - currentPosition.z, 2)
             );
 
             if (distance <= this.PROXIMITY_RADIUS) {
@@ -241,6 +237,8 @@ export class ChatManager {
 
     async cleanup(): Promise<void> {
         console.log('🧹 Cleaning up chat manager...');
+
+        useGameStore.getState().setChatMessages([]);
         
         if (this.channel) {
             try {
@@ -249,6 +247,29 @@ export class ChatManager {
             } catch (error) {
                 console.error('❌ Error unsubscribing from chat:', error);
             }
+        }
+
+        if (this.proximityChannel) {
+            try {
+                await this.proximityChannel.unsubscribe();
+                console.log('✅ Unsubscribed from proximity chat channel');
+            } catch (error) {
+                console.error('❌ Error unsubscribing from proximity chat:', error);
+            }
+        }
+
+        try {
+            const { error } = await (supabase as any)
+                .from('chat_messages')
+                .delete()
+                .eq('user_id', this.userId)
+                .eq('store_id', this.storeId);
+
+            if (error) {
+                console.error('❌ Failed to delete own chat messages on exit:', error);
+            }
+        } catch (error) {
+            console.error('❌ Chat cleanup delete failed:', error);
         }
 
         this.clearProximityMessages();

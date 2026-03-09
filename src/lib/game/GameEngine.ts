@@ -5,8 +5,7 @@ import { PlayerAvatar } from './entities/PlayerAvatar';
 import { RemoteAvatar } from './entities/RemoteAvatar';
 import { NPCAvatar } from './entities/NPCAvatar';
 import { ProductEntity } from './entities/ProductEntity';
-import { SPAWN_POINT, isInCheckoutArea, STORE_WIDTH, STORE_HEIGHT, getStoreConfig } from './Store';
-import { useGameStore } from '../store/gameStore';
+import { SPAWN_POINT, isInCheckoutArea, STORE_WIDTH, STORE_HEIGHT } from './Store';
 import type { Database } from '../supabase/types';
 
 type Product = Database['public']['Tables']['products']['Row'];
@@ -31,6 +30,7 @@ export class GameEngine {
     private onCheckoutEnter: (() => void) | null = null;
     private onPositionUpdate: ((position: any) => void) | null = null;
     private onPlayerClick: ((player: { user_id: string; username: string }) => void) | null = null;
+    private readonly handleResize = () => this.resize();
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -43,7 +43,7 @@ export class GameEngine {
         this.storeRenderer = new StoreRenderer();
 
         this.resize();
-        window.addEventListener('resize', () => this.resize());
+        window.addEventListener('resize', this.handleResize);
 
         // Mouse wheel for zoom
         this.canvas.addEventListener('wheel', (e) => {
@@ -51,24 +51,24 @@ export class GameEngine {
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
             this.camera.adjustZoom(delta);
         }, { passive: false });
-        // Spawn NPCs
-        //this.spawnNPCs();
+
+        this.spawnNPCs();
     }
 
-    // private spawnNPCs(): void {
-    //     const npcNames = ['Alex', 'Sam', 'Jordan', 'Taylor', 'Casey'];
+    private spawnNPCs(): void {
+        const npcNames = ['Alex', 'Sam', 'Jordan', 'Taylor', 'Casey'];
 
-    //     for (let i = 0; i < 5; i++) {
-    //         const x = Math.random() * (STORE_WIDTH - 200) + 100;
-    //         const y = Math.random() * (STORE_HEIGHT - 200) + 100;
-    //         const npc = new NPCAvatar(
-    //             `npc-${i}`,
-    //             npcNames[i],
-    //             { x, y }
-    //         );
-    //         this.npcAvatars.push(npc);
-    //     }
-    // }
+        for (let i = 0; i < 5; i++) {
+            const x = Math.random() * (STORE_WIDTH - 200) + 100;
+            const y = Math.random() * (STORE_HEIGHT - 200) + 100;
+            const npc = new NPCAvatar(
+                `npc-${i}`,
+                npcNames[i],
+                { x, y }
+            );
+            this.npcAvatars.push(npc);
+        }
+    }
 
     private resize(): void {
         this.canvas.width = window.innerWidth;
@@ -270,7 +270,6 @@ export class GameEngine {
 
             // If didn't click a player, check products
             if (!clickedPlayer) {
-                const worldPos = this.camera.screenToWorld(mousePos);
                 for (const product of this.products) {
                     if (product.containsPoint(mousePos, this.camera.position)) {
                         if (this.onProductClick) {
@@ -314,6 +313,6 @@ export class GameEngine {
     cleanup(): void {
         this.stop();
         this.inputManager.cleanup();
-        window.removeEventListener('resize', () => this.resize());
+        window.removeEventListener('resize', this.handleResize);
     }
 }

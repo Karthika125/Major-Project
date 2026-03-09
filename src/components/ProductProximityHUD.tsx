@@ -9,12 +9,12 @@ interface ProductProximityHUDProps {
 }
 
 export const ProductProximityHUD: React.FC<ProductProximityHUDProps> = ({ product }) => {
-    const addToCart = useGameStore(state => state.addToCart);
+    const setSelectedProduct = useGameStore(state => state.setSelectedProduct);
 
     if (!product) return null;
 
-    const handleAddToCart = () => {
-        addToCart(product);
+    const handleViewProduct = () => {
+        setSelectedProduct(product);
     };
 
     return (
@@ -183,15 +183,15 @@ export const ProductProximityHUD: React.FC<ProductProximityHUDProps> = ({ produc
 
                 <div className="proximity-hud-footer">
                     <div className="proximity-hud-price">
-                        <span className="proximity-hud-currency">$</span>
+                        <span className="proximity-hud-currency">₹</span>
                         {product.price}
                     </div>
                     <div className="proximity-hud-actions">
                         <button
                             className="proximity-hud-btn proximity-hud-btn-cart"
-                            onClick={handleAddToCart}
+                            onClick={handleViewProduct}
                         >
-                            🛒 Add to Cart
+                            👁️ View Details
                         </button>
                     </div>
                 </div>

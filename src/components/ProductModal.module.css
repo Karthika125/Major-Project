@@ -130,6 +130,13 @@
     margin-bottom: 24px;
 }
 
+.stock {
+    margin: -6px 0 20px;
+    color: #444;
+    font-size: 15px;
+    font-weight: 600;
+}
+
 .addButton {
     width: 100%;
     padding: 16px;
