@@ -43,6 +43,34 @@
     gap: 10px;
 }
 
+.tabBar {
+    max-width: 1200px;
+    margin: 20px auto 0;
+    display: flex;
+    gap: 10px;
+}
+
+.tabButton {
+    border: 1px solid rgba(158, 198, 243, 0.35);
+    border-radius: 999px;
+    background: #fff;
+    color: #333;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.tabButton:hover {
+    background: #f1f7ff;
+}
+
+.tabButtonActive {
+    background: #9EC6F3;
+    color: #fff;
+    border-color: transparent;
+}
+
 .formCard,
 .productsSection,
 .ordersSection {

@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase/client';
 import { uploadProductImage, deleteProductImage } from '../lib/supabase/productStorage';
 import { ProductForm, type ProductFormValues } from '../components/ProductForm';
 import { ProductList } from '../components/ProductList';
+import { StoreOrders } from '@/components/StoreOrders';
 import type { ProductCardAdminItem } from '../components/ProductCardAdmin';
 import styles from './StoreDashboardPage.module.css';
 
@@ -27,25 +28,6 @@ interface ProductRecord {
     created_at: string;
 }
 
-interface OrderItemRecord {
-    order_id: string;
-    product_name: string;
-    quantity: number;
-}
-
-interface OrderRecord {
-    id: string;
-    user_id: string;
-    status: string;
-    total_price: number;
-    created_at: string;
-    items: OrderItemRecord[];
-    username: string;
-}
-
-const ORDER_STATUSES = ['pending', 'paid', 'fulfilled', 'cancelled'] as const;
-type OrderStatus = (typeof ORDER_STATUSES)[number];
-
 export const StoreDashboardPage: React.FC = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -64,9 +46,7 @@ export const StoreDashboardPage: React.FC = () => {
     });
     const [storeSaving, setStoreSaving] = useState(false);
     const [deletingStore, setDeletingStore] = useState(false);
-    const [orders, setOrders] = useState<OrderRecord[]>([]);
-    const [ordersLoading, setOrdersLoading] = useState(false);
-    const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'products' | 'orders'>('products');
 
     const [formData, setFormData] = useState<ProductFormValues>({
         name: '',
@@ -101,94 +81,6 @@ export const StoreDashboardPage: React.FC = () => {
 
         if (productsError) throw productsError;
         setProducts(data || []);
-    };
-
-    const loadOrders = async (activeStoreId: string) => {
-        const db = supabase as any;
-        setOrdersLoading(true);
-
-        try {
-            const { data: orderRows, error: ordersError } = await db
-                .from('orders')
-                .select('id, user_id, status, total_price, created_at')
-                .eq('store_id', activeStoreId)
-                .order('created_at', { ascending: false })
-                .limit(100);
-
-            if (ordersError) throw ordersError;
-
-            const safeOrders = orderRows || [];
-            const orderIds: string[] = safeOrders.map((order: any) => order.id);
-            const userIds: string[] = Array.from(
-                new Set(safeOrders.map((order: any) => order.user_id).filter(Boolean))
-            );
-
-            const itemsByOrderId = new Map<string, OrderItemRecord[]>();
-
-            if (orderIds.length > 0) {
-                const { data: itemRows, error: itemsError } = await db
-                    .from('order_items')
-                    .select('order_id, product_name, quantity')
-                    .in('order_id', orderIds);
-
-                if (!itemsError) {
-                    (itemRows || []).forEach((item: any) => {
-                        if (!itemsByOrderId.has(item.order_id)) {
-                            itemsByOrderId.set(item.order_id, []);
-                        }
-
-                        itemsByOrderId.get(item.order_id)!.push({
-                            order_id: item.order_id,
-                            product_name: item.product_name,
-                            quantity: Number(item.quantity || 0),
-                        });
-                    });
-                }
-            }
-
-            const usernameByUserId = new Map<string, string>();
-
-            if (userIds.length > 0) {
-                const { data: profiles, error: profilesError } = await db
-                    .from('profiles')
-                    .select('id, username')
-                    .in('id', userIds);
-
-                if (!profilesError) {
-                    (profiles || []).forEach((profile: any) => {
-                        usernameByUserId.set(profile.id, profile.username);
-                    });
-                } else {
-                    const { data: users, error: usersError } = await db
-                        .from('users')
-                        .select('id, username')
-                        .in('id', userIds);
-
-                    if (!usersError) {
-                        (users || []).forEach((legacyUser: any) => {
-                            usernameByUserId.set(legacyUser.id, legacyUser.username);
-                        });
-                    }
-                }
-            }
-
-            const normalizedOrders: OrderRecord[] = safeOrders.map((order: any) => ({
-                id: order.id,
-                user_id: order.user_id,
-                status: String(order.status || 'pending'),
-                total_price: Number(order.total_price || 0),
-                created_at: order.created_at,
-                items: itemsByOrderId.get(order.id) || [],
-                username: usernameByUserId.get(order.user_id) || 'Unknown',
-            }));
-
-            setOrders(normalizedOrders);
-        } catch (err) {
-            console.error('Error loading store orders:', err);
-            setOrders([]);
-        } finally {
-            setOrdersLoading(false);
-        }
     };
 
     useEffect(() => {
@@ -228,7 +120,7 @@ export const StoreDashboardPage: React.FC = () => {
                     description: storeData.description || '',
                 });
 
-                await Promise.all([loadProducts(storeId), loadOrders(storeId)]);
+                await loadProducts(storeId);
             } catch (err: any) {
                 console.error('Error loading store dashboard:', err);
                 setError(err?.message || 'Failed to load dashboard.');
@@ -458,45 +350,6 @@ export const StoreDashboardPage: React.FC = () => {
         }
     };
 
-    const handleUpdateOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
-        if (!storeId) return;
-
-        if (!canManageStore) {
-            setError('Only the store owner can update order status.');
-            return;
-        }
-
-        setUpdatingOrderId(orderId);
-        setError('');
-
-        try {
-            const db = supabase as any;
-            const { error: updateError } = await db
-                .from('orders')
-                .update({ status: nextStatus })
-                .eq('id', orderId)
-                .eq('store_id', storeId);
-
-            if (updateError) throw updateError;
-
-            setOrders((prev) =>
-                prev.map((order) =>
-                    order.id === orderId
-                        ? {
-                            ...order,
-                            status: nextStatus,
-                        }
-                        : order
-                )
-            );
-        } catch (err: any) {
-            console.error('Error updating order status:', err);
-            setError(err?.message || 'Failed to update order status.');
-        } finally {
-            setUpdatingOrderId(null);
-        }
-    };
-
     if (!user) return null;
 
     if (loading) {
@@ -583,90 +436,58 @@ export const StoreDashboardPage: React.FC = () => {
                 </form>
             </section>
 
-            <section className={styles.formCard}>
-                <h2>{editingProduct ? 'Edit Product' : 'Add Product'}</h2>
-                <ProductForm
-                    values={formData}
-                    editing={Boolean(editingProduct)}
-                    saving={saving}
-                    disabled={!canManageProducts}
-                    onSubmit={handleSubmitProduct}
-                    onFieldChange={(field, value) => setFormData((prev) => ({ ...prev, [field]: value }))}
-                    onFileChange={setSelectedImageFile}
-                    onCancelEdit={resetForm}
-                />
-            </section>
+            <nav className={styles.tabBar} aria-label="Dashboard Sections">
+                <button
+                    type="button"
+                    className={`${styles.tabButton} ${activeTab === 'products' ? styles.tabButtonActive : ''}`}
+                    onClick={() => setActiveTab('products')}
+                >
+                    Products
+                </button>
+                <button
+                    type="button"
+                    className={`${styles.tabButton} ${activeTab === 'orders' ? styles.tabButtonActive : ''}`}
+                    onClick={() => setActiveTab('orders')}
+                >
+                    Orders
+                </button>
+            </nav>
 
-            <section className={styles.productsSection}>
-                <h2>Your Products ({products.length})</h2>
-                <ProductList
-                    products={products}
-                    canManage={canManageProducts}
-                    onEdit={handleEditProduct}
-                    onDelete={handleDeleteProduct}
-                />
-            </section>
+            {activeTab === 'products' ? (
+                <>
+                    <section className={styles.formCard}>
+                        <h2>{editingProduct ? 'Edit Product' : 'Add Product'}</h2>
+                        <ProductForm
+                            values={formData}
+                            editing={Boolean(editingProduct)}
+                            saving={saving}
+                            disabled={!canManageProducts}
+                            onSubmit={handleSubmitProduct}
+                            onFieldChange={(field, value) => setFormData((prev) => ({ ...prev, [field]: value }))}
+                            onFileChange={setSelectedImageFile}
+                            onCancelEdit={resetForm}
+                        />
+                    </section>
 
-            <section className={styles.ordersSection}>
-                <h2>Store Orders ({orders.length})</h2>
-
-                {ordersLoading ? (
-                    <div className={styles.emptyState}>Loading orders...</div>
-                ) : orders.length === 0 ? (
-                    <div className={styles.emptyState}>No orders yet for this store.</div>
-                ) : (
-                    <div className={styles.ordersGrid}>
-                        {orders.map((order) => (
-                            <article key={order.id} className={styles.orderCard}>
-                                <div className={styles.orderHeader}>
-                                    <span className={styles.orderId}>#{order.id.slice(0, 8)}</span>
-                                    <span className={styles.orderDate}>
-                                        {new Date(order.created_at).toLocaleString()}
-                                    </span>
-                                </div>
-
-                                <div className={styles.orderMeta}>
-                                    <strong>Customer:</strong> {order.username}
-                                </div>
-                                <div className={styles.orderMeta}>
-                                    <strong>Total:</strong> ₹{order.total_price.toFixed(2)}
-                                </div>
-
-                                <div className={styles.orderItemsList}>
-                                    {order.items.length === 0 ? (
-                                        <div className={styles.orderItem}>No item snapshot found.</div>
-                                    ) : (
-                                        order.items.map((item, index) => (
-                                            <div key={`${order.id}-${index}`} className={styles.orderItem}>
-                                                <span>{item.product_name}</span>
-                                                <span>x{item.quantity}</span>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-
-                                <div className={styles.statusActions}>
-                                    {ORDER_STATUSES.map((status) => (
-                                        <button
-                                            key={status}
-                                            type="button"
-                                            className={`${styles.statusButton} ${order.status === status ? styles.statusButtonActive : ''}`}
-                                            onClick={() => handleUpdateOrderStatus(order.id, status)}
-                                            disabled={
-                                                !canManageStore ||
-                                                updatingOrderId === order.id ||
-                                                order.status === status
-                                            }
-                                        >
-                                            {status}
-                                        </button>
-                                    ))}
-                                </div>
-                            </article>
-                        ))}
-                    </div>
-                )}
-            </section>
+                    <section className={styles.productsSection}>
+                        <h2>Your Products ({products.length})</h2>
+                        <ProductList
+                            products={products}
+                            canManage={canManageProducts}
+                            onEdit={handleEditProduct}
+                            onDelete={handleDeleteProduct}
+                        />
+                    </section>
+                </>
+            ) : (
+                <section className={styles.ordersSection}>
+                    <h2>Orders</h2>
+                    <StoreOrders
+                        storeId={storeId}
+                        canManageStore={canManageStore}
+                    />
+                </section>
+            )}
         </div>
     );
 };

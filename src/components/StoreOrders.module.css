@@ -1,0 +1,82 @@
+.container {
+    width: 100%;
+}
+
+.tableWrap {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid rgba(158, 198, 243, 0.28);
+    border-radius: 12px;
+    background: #fff;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 760px;
+}
+
+.table thead th {
+    text-align: left;
+    font-size: 13px;
+    font-weight: 800;
+    color: #333;
+    background: #f8fbff;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(158, 198, 243, 0.3);
+}
+
+.summaryRow td {
+    padding: 12px 14px;
+    font-size: 14px;
+    color: #444;
+    border-bottom: 1px solid rgba(158, 198, 243, 0.2);
+}
+
+.expandButton {
+    border: 1px solid rgba(158, 198, 243, 0.4);
+    background: #fff;
+    color: #333;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.expandButton:hover {
+    background: #f1f7ff;
+}
+
+.itemsRow td {
+    padding: 12px 14px;
+    background: #f8fbff;
+    border-bottom: 1px solid rgba(158, 198, 243, 0.2);
+}
+
+.itemsList {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.itemLine {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: #444;
+    font-size: 13px;
+}
+
+.emptyItems,
+.emptyState {
+    border: 1px dashed rgba(158, 198, 243, 0.6);
+    border-radius: 12px;
+    color: #666;
+    background: rgba(255, 241, 213, 0.4);
+    padding: 18px;
+    text-align: center;
+    font-size: 14px;
+}

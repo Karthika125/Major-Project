@@ -266,48 +266,59 @@ export const calculateCartTotal = (items: StoreCartItem[]): number => {
     }, 0);
 };
 
-export const checkoutStoreCart = async (userId: string, storeId: string): Promise<CheckoutResult> => {
+const toCheckoutError = (error: any): Error => {
+    const rawMessage = `${error?.message || ''} ${error?.details || ''}`.trim();
+    const errorCode = String(error?.code || '').toUpperCase();
+
+    if (/insufficient stock|out of stock/i.test(rawMessage) || (errorCode === 'P0001' && /stock/i.test(rawMessage))) {
+        return new Error('Some items are out of stock. Please update your cart and try again.');
+    }
+
+    if (/cart is empty|no active cart/i.test(rawMessage)) {
+        return new Error('Your cart is empty.');
+    }
+
+    if (rawMessage) {
+        return new Error(rawMessage);
+    }
+
+    return new Error('Checkout failed. Please try again.');
+};
+
+export const checkoutStoreCart = async (userId: string, _storeId: string): Promise<CheckoutResult> => {
     const db = supabase as any;
-    const { cartId, items } = await fetchStoreCartItems(userId, storeId);
+    const { data: createdOrderId, error: checkoutError } = await db
+        .rpc('checkout_cart', {
+            p_user_id: userId,
+        });
 
-    if (!cartId || items.length === 0) {
-        throw new Error('Your cart is empty.');
+    if (checkoutError) {
+        throw toCheckoutError(checkoutError);
     }
 
-    const totalPrice = calculateCartTotal(items);
-    const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
-
-    const { data: order, error: orderError } = await db
-        .from('orders')
-        .insert({
-            user_id: userId,
-            store_id: storeId,
-            status: 'pending',
-            total_price: totalPrice,
-        })
-        .select('id')
-        .single();
-
-    if (orderError) {
-        throw orderError;
-    }
-
-    if (!order?.id) {
+    if (!createdOrderId) {
         throw new Error('Checkout failed: order was not created.');
     }
 
-    // Clear cart items after order snapshot/stock updates are completed.
-    const { error: clearError } = await db
-        .from('cart_items')
-        .delete()
-        .eq('cart_id', cartId);
+    let totalPrice = 0;
+    let itemCount = 0;
 
-    if (clearError) {
-        throw clearError;
-    }
+    const { data: orderData } = await db
+        .from('orders')
+        .select('total_price')
+        .eq('id', createdOrderId)
+        .maybeSingle();
+
+    const { data: orderItemsData } = await db
+        .from('order_items')
+        .select('quantity')
+        .eq('order_id', createdOrderId);
+
+    totalPrice = Number(orderData?.total_price || 0);
+    itemCount = (orderItemsData || []).reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0);
 
     return {
-        orderId: order.id,
+        orderId: createdOrderId,
         totalPrice,
         itemCount,
     };

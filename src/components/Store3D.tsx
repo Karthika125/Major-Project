@@ -367,10 +367,15 @@ const Shelf: React.FC<{
 
 // Optimized Player Controller
 const PlayerController: React.FC<{
-    onPositionUpdate: (position: [number, number, number]) => void;
+    onTransformUpdate: (
+        position: [number, number, number],
+        rotation: [number, number, number],
+        isMoving: boolean
+    ) => void;
     collisionBoxes: Array<{ x: number; z: number; w: number; d: number }>;
-}> = ({ onPositionUpdate, collisionBoxes }) => {
+}> = ({ onTransformUpdate, collisionBoxes }) => {
     const { camera } = useThree();
+    const wasMoving = useRef(false);
     const moveState = useRef({
         forward: false,
         backward: false,
@@ -429,6 +434,12 @@ const PlayerController: React.FC<{
             Number(state.backward) - Number(state.forward)
         );
 
+        const rotation: [number, number, number] = [
+            camera.rotation.x,
+            camera.rotation.y,
+            camera.rotation.z,
+        ];
+
         if (direction.length() > 0) {
             direction.normalize();
 
@@ -450,7 +461,15 @@ const PlayerController: React.FC<{
             }
 
             camera.position.y = 1.6;
-            onPositionUpdate([camera.position.x, camera.position.y, camera.position.z]);
+            onTransformUpdate([camera.position.x, camera.position.y, camera.position.z], rotation, true);
+            wasMoving.current = true;
+            return;
+        }
+
+        if (wasMoving.current) {
+            camera.position.y = 1.6;
+            onTransformUpdate([camera.position.x, camera.position.y, camera.position.z], rotation, false);
+            wasMoving.current = false;
         }
     });
 
@@ -473,24 +492,30 @@ export const Store3D: React.FC<Store3DProps> = ({
     // Subscribe to real player data from game store instead of mock data
     const otherPlayers = useGameStore((state) => state.otherPlayers);
 
-    // Convert database positions (2D or mixed) to 3D positions for rendering
+    // Convert room presence positions to renderable 3D coordinates with fallback for legacy records.
     const onlineUsers = useMemo(() => {
         return otherPlayers.map(player => {
-            // Convert 2D position (x, y in pixels) to 3D position
-            // The original code used position_x and position_y as pixel coordinates (e.g., 400, 300)
-            // We need to convert them to 3D world coordinates
-            const x3d = ((player.position_x || 0) - 400) / 20; // Center at 400, scale down
-            const z3d = ((player.position_y || 0) - 300) / 20; // Center at 300, scale down
+            const roomPosition = (player as any).position;
+            const hasRoomPosition =
+                roomPosition &&
+                typeof roomPosition.x === 'number' &&
+                typeof roomPosition.y === 'number' &&
+                typeof roomPosition.z === 'number';
+
+            const x3d = hasRoomPosition ? roomPosition.x : Number(player.position_x || 0);
+            const y3d = hasRoomPosition ? roomPosition.y : 1.6;
+            const z3d = hasRoomPosition ? roomPosition.z : Number(player.position_y || 0);
             
             return {
                 user_id: player.user_id,
                 username: player.username,
-                position: [x3d, 1.6, z3d] as [number, number, number],
+                position: [x3d, y3d, z3d] as [number, number, number],
                 avatar_customization: (player as any).avatar_customization || {
                     bodyColor: '#4A90E2',
                     skinTone: '#FFD1A3',
                     style: 'casual',
                 },
+                rotation: (player as any).rotation || { x: 0, y: 0, z: 0 },
                 current_action: (player as any).current_action,
                 viewing_product_id: (player as any).viewing_product_id,
                 animation_state: (player as any).animation_state,
@@ -566,7 +591,11 @@ export const Store3D: React.FC<Store3DProps> = ({
         ];
     }, [shelfLayouts]);
 
-    const handlePositionUpdate = useCallback((position: [number, number, number]) => {
+    const handleTransformUpdate = useCallback((
+        position: [number, number, number],
+        rotation: [number, number, number],
+        isMoving: boolean
+    ) => {
         const now = Date.now();
         // Update at ~60fps
         if (now - lastUpdateTime.current > 16) {
@@ -574,17 +603,20 @@ export const Store3D: React.FC<Store3DProps> = ({
             setCurrentUserPosition(position);
 
             if (presenceManager) {
-                // Convert 3D position to database format (2D with Z)
-                const x2d = position[0] * 20 + 400;
-                const y2d = position[2] * 20 + 300;
-                const z = position[1];
-                
                 presenceManager.updateState({
-                    position_x: x2d,
-                    position_y: y2d,
-                    position_z: z,
+                    position: {
+                        x: position[0],
+                        y: position[1],
+                        z: position[2],
+                    },
+                    rotation: {
+                        x: rotation[0],
+                        y: rotation[1],
+                        z: rotation[2],
+                    },
                     direction: 'down',
-                    is_moving: true,
+                    is_moving: isMoving,
+                    animation_state: isMoving ? 'walking' : 'idle',
                 }).catch((err: Error) => console.error('Presence update failed', err));
             }
 
@@ -738,7 +770,7 @@ export const Store3D: React.FC<Store3DProps> = ({
             ))}
 
             {/* Controls */}
-            <PlayerController onPositionUpdate={handlePositionUpdate} collisionBoxes={collisionBoxes} />
+            <PlayerController onTransformUpdate={handleTransformUpdate} collisionBoxes={collisionBoxes} />
             <PointerLockControls />
         </>
     );

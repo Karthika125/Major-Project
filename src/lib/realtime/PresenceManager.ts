@@ -2,10 +2,21 @@ import { supabase } from '../supabase/client';
 import { useGameStore } from '../store/gameStore';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+interface Vector3 {
+    x: number;
+    y: number;
+    z: number;
+}
+
+interface Rotation {
+    x: number;
+    y: number;
+    z: number;
+}
+
 export interface PlayerState {
-    position_x: number;
-    position_y: number;
-    position_z?: number;
+    position: Vector3;
+    rotation: Rotation;
     direction: string;
     is_moving: boolean;
     current_action?: 'idle' | 'walking' | 'viewing_product' | 'shopping';
@@ -18,212 +29,412 @@ export interface PlayerState {
     animation_state?: 'idle' | 'walking' | 'waving' | 'shopping';
 }
 
+interface PresencePayload extends PlayerState {
+    user_id: string;
+    username: string;
+    avatar_url: string | null;
+    store_id: string;
+    online_at: string;
+}
+
+interface PlayerMovePayload {
+    user_id: string;
+    position: Vector3;
+    rotation: Rotation;
+    is_moving?: boolean;
+    current_action?: 'idle' | 'walking' | 'viewing_product' | 'shopping';
+    animation_state?: 'idle' | 'walking' | 'waving' | 'shopping';
+}
+
+interface BroadcastChatMessage {
+    user_id: string;
+    username: string;
+    message: string;
+    timestamp: string;
+}
+
+interface PlayerInteractionPayload {
+    user_id: string;
+    username: string;
+    type: string;
+    target_user_id?: string;
+    created_at: string;
+}
+
+interface PresenceManagerOptions {
+    isStoreOwner?: boolean;
+    avatarUrl?: string | null;
+}
+
+const DEFAULT_PLAYER_STATE: PlayerState = {
+    position: { x: 0, y: 1.6, z: 12 },
+    rotation: { x: 0, y: 0, z: 0 },
+    direction: 'down',
+    is_moving: false,
+    current_action: 'idle',
+    animation_state: 'idle',
+};
+
+export const STORE_ROOM_CAPACITY = 10;
+
 export class PresenceManager {
     private channel: RealtimeChannel | null = null;
-    private userId: string;
-    private username: string;
-    private storeId: string;
-    private updateInterval: NodeJS.Timeout | null = null;
-    private lastRealtimeUpdate: number = 0;
-    private lastDbUpdate: number = 0;
-    private currentState: PlayerState | null = null;
-    
-    // 60fps = ~16ms per frame, we'll send updates every frame
-    private readonly REALTIME_UPDATE_INTERVAL = 16; // ~60fps
-    private readonly DB_UPDATE_INTERVAL = 5000; // 5 seconds for persistence
-    private reconnectAttempts: number = 0;
-    private readonly MAX_RECONNECT_ATTEMPTS = 5;
+    private readonly userId: string;
+    private readonly username: string;
+    private readonly storeId: string;
+    private readonly isStoreOwner: boolean;
+    private readonly avatarUrl: string | null;
+    private currentState: PlayerState;
+    private lastMoveBroadcastAt = 0;
+    private lastPresenceTrackAt = 0;
 
-    constructor(userId: string, username: string, storeId: string) {
+    private readonly roomCapacity = STORE_ROOM_CAPACITY;
+    private readonly moveBroadcastInterval = 90;
+    private readonly presenceTrackInterval = 2500;
+
+    constructor(userId: string, username: string, storeId: string, options: PresenceManagerOptions = {}) {
         this.userId = userId;
         this.username = username;
         this.storeId = storeId;
+        this.isStoreOwner = Boolean(options.isStoreOwner);
+        this.avatarUrl = options.avatarUrl || null;
+        this.currentState = { ...DEFAULT_PLAYER_STATE };
     }
 
     async initialize(): Promise<void> {
-        try {
-            // Subscribe to presence channel with auto-reconnect
-            this.channel = supabase.channel(`store-presence-${this.storeId}`, {
-                config: {
-                    presence: {
-                        key: this.userId,
-                    },
+        useGameStore.getState().setOtherPlayers([]);
+        useGameStore.getState().setChatMessages([]);
+
+        this.channel = supabase.channel(`store-room-${this.storeId}`, {
+            config: {
+                presence: {
+                    key: this.userId,
                 },
+                broadcast: {
+                    self: false,
+                },
+            },
+        });
+
+        this.channel
+            .on('presence', { event: 'sync' }, () => {
+                this.handlePresenceSync(this.channel?.presenceState() || {});
+            })
+            .on('presence', { event: 'join' }, ({ newPresences }) => {
+                this.handlePresenceJoin(newPresences || []);
+            })
+            .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+                this.handlePresenceLeave(leftPresences || []);
+            })
+            .on('broadcast', { event: 'player_move' }, (payload) => {
+                this.handlePlayerMove(payload.payload as PlayerMovePayload);
+            })
+            .on('broadcast', { event: 'chat_message' }, (payload) => {
+                this.handleChatMessage(payload.payload as BroadcastChatMessage);
+            })
+            .on('broadcast', { event: 'player_interaction' }, (payload) => {
+                this.handlePlayerInteraction(payload.payload as PlayerInteractionPayload);
             });
 
-            // Listen for presence changes
-            this.channel
-                .on('presence', { event: 'sync' }, () => {
-                    const state = this.channel!.presenceState();
-                    this.handlePresenceSync(state);
-                })
-                .on('presence', { event: 'join' }, ({ newPresences }) => {
-                    console.log('👋 Player joined:', newPresences);
-                    newPresences.forEach((presence: any) => {
-                        if (presence.user_id !== this.userId && (!presence.store_id || presence.store_id === this.storeId)) {
-                            useGameStore.getState().updatePlayerPosition(presence.user_id, presence);
+        await new Promise<void>((resolve, reject) => {
+            let settled = false;
+
+            this.channel?.subscribe(async (status, error) => {
+                if (status === 'SUBSCRIBED') {
+                    const occupancy = this.countPresentUsers(this.channel?.presenceState() || {});
+                    if (occupancy >= this.roomCapacity && !this.isStoreOwner) {
+                        await this.channel?.unsubscribe();
+                        this.channel = null;
+
+                        if (!settled) {
+                            settled = true;
+                            const storeFullError = new Error('Store Full') as Error & {
+                                occupancy?: number;
+                                capacity?: number;
+                            };
+                            storeFullError.occupancy = occupancy;
+                            storeFullError.capacity = this.roomCapacity;
+                            reject(storeFullError);
                         }
-                    });
-                })
-                .on('presence', { event: 'leave' }, ({ leftPresences }) => {
-                    console.log('👋 Player left:', leftPresences);
-                    leftPresences.forEach((presence: any) => {
-                        useGameStore.getState().removePlayer(presence.user_id);
-                    });
-                })
-                .subscribe(async (status, error) => {
-                    if (status === 'SUBSCRIBED') {
-                        console.log('✅ Presence channel connected');
-                        this.reconnectAttempts = 0;
-                        
-                        // Track initial presence
-                        const initialState: PlayerState = {
-                            position_x: 0,
-                            position_y: 1.6,
-                            position_z: 12,
-                            direction: 'down',
-                            is_moving: false,
-                            current_action: 'idle',
-                            animation_state: 'idle',
-                        };
-                        await this.updateState(initialState);
-                    } else if (status === 'CHANNEL_ERROR') {
-                        console.error('❌ Presence channel error:', error);
-                        this.handleReconnect();
-                    } else if (status === 'TIMED_OUT') {
-                        console.warn('⏱️ Presence channel timed out');
-                        this.handleReconnect();
+                        return;
                     }
-                });
 
-            // Subscribe to database changes for persistence fallback
-            supabase
-                .channel(`user_presence_db_${this.storeId}`)
-                .on(
-                    'postgres_changes',
-                    {
-                        event: 'DELETE',
-                        schema: 'public',
-                        table: 'user_presence',
-                    },
-                    (payload) => {
-                        const data = payload.old as any;
-                        useGameStore.getState().removePlayer(data.user_id);
+                    await this.trackPresence(this.currentState);
+
+                    if (!settled) {
+                        settled = true;
+                        resolve();
                     }
-                )
-                .subscribe();
+                    return;
+                }
 
-            // Keep presence scoped to realtime store channel to avoid cross-store bleed.
-            useGameStore.getState().setOtherPlayers([]);
-        } catch (error) {
-            console.error('❌ Presence initialization failed:', error);
-            throw error;
-        }
-    }
-
-    private handleReconnect(): void {
-        if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
-            console.error('❌ Max reconnection attempts reached');
-            return;
-        }
-
-        this.reconnectAttempts++;
-        console.log(`🔄 Reconnecting... (attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`);
-
-        setTimeout(() => {
-            this.initialize().catch(err => {
-                console.error('❌ Reconnection failed:', err);
-            });
-        }, Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000)); // Exponential backoff
-    }
-
-    private handlePresenceSync(state: any): void {
-        const players: any[] = [];
-
-        Object.keys(state).forEach((key) => {
-            const presences = state[key];
-            presences.forEach((presence: any) => {
-                if (
-                    presence.user_id !== this.userId &&
-                    (!presence.store_id || presence.store_id === this.storeId)
-                ) {
-                    players.push(presence);
+                if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && !settled) {
+                    settled = true;
+                    reject(error || new Error('Failed to connect to store room.'));
                 }
             });
         });
+    }
 
-        // Batch update all remote players
-        if (players.length > 0) {
-            console.log(`🔄 Syncing ${players.length} players`);
-            players.forEach((player) => {
-                useGameStore.getState().updatePlayerPosition(player.user_id, player);
+    private countPresentUsers(state: Record<string, any>): number {
+        const userIds = new Set<string>();
+
+        Object.values(state).forEach((entries) => {
+            (entries || []).forEach((presence: any) => {
+                if (!presence?.user_id) {
+                    return;
+                }
+
+                if (presence.store_id && presence.store_id !== this.storeId) {
+                    return;
+                }
+
+                userIds.add(presence.user_id);
             });
-        }
+        });
+
+        return userIds.size;
     }
 
-    private async trackPresence(data: PlayerState): Promise<void> {
-        if (this.channel) {
-            try {
-                await this.channel.track({
-                    user_id: this.userId,
-                    username: this.username,
-                    store_id: this.storeId,
-                    ...data,
-                    online_at: new Date().toISOString(),
-                });
-            } catch (error) {
-                console.error('❌ Failed to track presence:', error);
+    private mapPresenceToPlayer(presence: any): any {
+        const position = presence?.position || DEFAULT_PLAYER_STATE.position;
+        const rotation = presence?.rotation || DEFAULT_PLAYER_STATE.rotation;
+
+        return {
+            user_id: presence.user_id,
+            username: presence.username || 'Shopper',
+            avatar_url: presence.avatar_url || null,
+            store_id: presence.store_id || this.storeId,
+            position,
+            rotation,
+            position_x: Number(position.x || 0),
+            position_y: Number(position.z || 0),
+            direction: presence.direction || 'down',
+            is_moving: Boolean(presence.is_moving),
+            current_action: presence.current_action || 'idle',
+            viewing_product_id: presence.viewing_product_id,
+            avatar_customization: presence.avatar_customization,
+            animation_state: presence.animation_state || (presence.is_moving ? 'walking' : 'idle'),
+            last_seen: presence.online_at || new Date().toISOString(),
+        };
+    }
+
+    private handlePresenceSync(state: Record<string, any>): void {
+        const players: any[] = [];
+
+        Object.values(state).forEach((entries) => {
+            (entries || []).forEach((presence: any) => {
+                if (!presence?.user_id || presence.user_id === this.userId) {
+                    return;
+                }
+
+                if (presence.store_id && presence.store_id !== this.storeId) {
+                    return;
+                }
+
+                players.push(this.mapPresenceToPlayer(presence));
+            });
+        });
+
+        useGameStore.getState().setOtherPlayers(players as any);
+    }
+
+    private handlePresenceJoin(newPresences: any[]): void {
+        newPresences.forEach((presence) => {
+            if (!presence?.user_id || presence.user_id === this.userId) {
+                return;
             }
-        }
-    }
 
-    private async updateDatabase(data: PlayerState): Promise<void> {
-        try {
-            const { error } = await supabase.from('user_presence').upsert({
-                user_id: this.userId,
-                username: this.username,
-                position_x: data.position_x,
-                position_y: data.position_y,
-                direction: data.direction,
-                is_moving: data.is_moving,
-                last_seen: new Date().toISOString(),
-            } as any); // Type assertion needed due to schema type inference
-
-            if (error) {
-                console.error('❌ Database update failed:', error);
+            if (presence.store_id && presence.store_id !== this.storeId) {
+                return;
             }
-        } catch (error) {
-            console.error('❌ Database update exception:', error);
+
+            useGameStore.getState().updatePlayerPosition(
+                presence.user_id,
+                this.mapPresenceToPlayer(presence)
+            );
+        });
+    }
+
+    private handlePresenceLeave(leftPresences: any[]): void {
+        leftPresences.forEach((presence) => {
+            if (!presence?.user_id) {
+                return;
+            }
+
+            useGameStore.getState().removePlayer(presence.user_id);
+        });
+    }
+
+    private handlePlayerMove(payload: PlayerMovePayload): void {
+        if (!payload?.user_id || payload.user_id === this.userId) {
+            return;
+        }
+
+        if (!payload.position || !payload.rotation) {
+            return;
+        }
+
+        useGameStore.getState().updatePlayerPosition(payload.user_id, {
+            user_id: payload.user_id,
+            position: payload.position,
+            rotation: payload.rotation,
+            position_x: payload.position.x,
+            position_y: payload.position.z,
+            is_moving: payload.is_moving ?? true,
+            animation_state: payload.animation_state || ((payload.is_moving ?? true) ? 'walking' : 'idle'),
+            current_action: payload.current_action,
+            last_seen: new Date().toISOString(),
+        } as any);
+    }
+
+    private handleChatMessage(message: BroadcastChatMessage): void {
+        if (!message?.user_id || !message.username || !message.message || !message.timestamp) {
+            return;
+        }
+
+        if (message.user_id === this.userId) {
+            return;
+        }
+
+        useGameStore.getState().addChatMessage({
+            id: `${message.user_id}-${message.timestamp}-${Math.random().toString(36).slice(2, 8)}`,
+            user_id: message.user_id,
+            username: message.username,
+            message: message.message,
+            timestamp: message.timestamp,
+        });
+    }
+
+    private handlePlayerInteraction(payload: PlayerInteractionPayload): void {
+        if (!payload?.user_id || payload.user_id === this.userId) {
+            return;
+        }
+
+        if (payload.target_user_id && payload.target_user_id !== this.userId) {
+            return;
+        }
+
+        const interactionType = payload.type || 'idle';
+        useGameStore.getState().updatePlayerPosition(payload.user_id, {
+            current_action: interactionType === 'chat' ? 'shopping' : 'idle',
+            animation_state: interactionType === 'wave' ? 'waving' : 'idle',
+        } as any);
+
+        if (interactionType === 'wave') {
+            setTimeout(() => {
+                useGameStore.getState().updatePlayerPosition(payload.user_id, {
+                    animation_state: 'idle',
+                    current_action: 'idle',
+                } as any);
+            }, 1200);
         }
     }
 
-    // New unified state update method
+    private async trackPresence(state: PlayerState): Promise<void> {
+        if (!this.channel) {
+            return;
+        }
+
+        const payload: PresencePayload = {
+            user_id: this.userId,
+            username: this.username,
+            avatar_url: this.avatarUrl,
+            store_id: this.storeId,
+            online_at: new Date().toISOString(),
+            ...state,
+        };
+
+        await this.channel.track(payload);
+    }
+
     async updateState(state: Partial<PlayerState>): Promise<void> {
         const now = Date.now();
 
-        // Merge with current state
         this.currentState = {
             ...this.currentState,
             ...state,
-        } as PlayerState;
+            position: {
+                ...this.currentState.position,
+                ...(state.position || {}),
+            },
+            rotation: {
+                ...this.currentState.rotation,
+                ...(state.rotation || {}),
+            },
+        };
 
-        // Send to Realtime (60fps - controlled by caller throttling)
-        if (now - this.lastRealtimeUpdate >= this.REALTIME_UPDATE_INTERVAL) {
-            this.lastRealtimeUpdate = now;
-            await this.trackPresence(this.currentState);
+        if (this.channel && now - this.lastMoveBroadcastAt >= this.moveBroadcastInterval) {
+            this.lastMoveBroadcastAt = now;
+
+            await this.channel.send({
+                type: 'broadcast',
+                event: 'player_move',
+                payload: {
+                    user_id: this.userId,
+                    position: this.currentState.position,
+                    rotation: this.currentState.rotation,
+                    is_moving: this.currentState.is_moving,
+                    current_action: this.currentState.current_action,
+                    animation_state: this.currentState.animation_state,
+                } as PlayerMovePayload,
+            });
         }
 
-        // Throttle database writes (every 5 seconds)
-        if (now - this.lastDbUpdate >= this.DB_UPDATE_INTERVAL) {
-            this.lastDbUpdate = now;
-            // Fire and forget to avoid blocking
-            this.updateDatabase(this.currentState).catch(err => 
-                console.error('DB update failed', err)
-            );
+        if (now - this.lastPresenceTrackAt >= this.presenceTrackInterval) {
+            this.lastPresenceTrackAt = now;
+            await this.trackPresence(this.currentState);
         }
     }
 
-    // Legacy method for backward compatibility
+    async sendMessage(message: string): Promise<void> {
+        if (!this.channel) {
+            throw new Error('Not connected to store room.');
+        }
+
+        const timestamp = new Date().toISOString();
+        const payload: BroadcastChatMessage = {
+            user_id: this.userId,
+            username: this.username,
+            message,
+            timestamp,
+        };
+
+        await this.channel.send({
+            type: 'broadcast',
+            event: 'chat_message',
+            payload,
+        });
+
+        useGameStore.getState().addChatMessage({
+            id: `${this.userId}-${timestamp}-${Math.random().toString(36).slice(2, 8)}`,
+            user_id: this.userId,
+            username: this.username,
+            message,
+            timestamp,
+        });
+    }
+
+    async sendPlayerInteraction(type: 'wave' | 'chat' | 'follow', targetUserId?: string): Promise<void> {
+        if (!this.channel) {
+            return;
+        }
+
+        const payload: PlayerInteractionPayload = {
+            user_id: this.userId,
+            username: this.username,
+            type,
+            target_user_id: targetUserId,
+            created_at: new Date().toISOString(),
+        };
+
+        await this.channel.send({
+            type: 'broadcast',
+            event: 'player_interaction',
+            payload,
+        });
+    }
+
     async updatePosition(position: {
         position_x: number;
         position_y: number;
@@ -231,15 +442,17 @@ export class PresenceManager {
         is_moving: boolean;
     }): Promise<void> {
         await this.updateState({
-            position_x: position.position_x,
-            position_y: position.position_y,
+            position: {
+                x: position.position_x,
+                y: 1.6,
+                z: position.position_y,
+            },
             direction: position.direction,
             is_moving: position.is_moving,
             animation_state: position.is_moving ? 'walking' : 'idle',
         });
     }
 
-    // New methods for enhanced multiplayer
     async updateAction(action: 'idle' | 'walking' | 'viewing_product' | 'shopping', productId?: string): Promise<void> {
         await this.updateState({
             current_action: action,
@@ -259,42 +472,22 @@ export class PresenceManager {
         });
     }
 
-    getCurrentState(): PlayerState | null {
+    getCurrentState(): PlayerState {
         return this.currentState;
     }
 
     async cleanup(): Promise<void> {
-        console.log('🧹 Cleaning up presence manager...');
-        
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-        }
+        useGameStore.getState().setChatMessages([]);
 
         if (this.channel) {
             try {
                 await this.channel.untrack();
                 await this.channel.unsubscribe();
-                console.log('✅ Unsubscribed from presence channel');
             } catch (error) {
-                console.error('❌ Error unsubscribing:', error);
+                console.error('❌ Error unsubscribing from store room:', error);
             }
         }
 
-        // Final database update on exit
-        if (this.currentState) {
-            try {
-                await this.updateDatabase(this.currentState);
-            } catch (error) {
-                console.error('❌ Final DB update failed:', error);
-            }
-        }
-
-        // Optional: Remove from DB to show as offline
-        try {
-            await supabase.from('user_presence').delete().eq('user_id', this.userId);
-            console.log('✅ Removed from user_presence');
-        } catch (error) {
-            console.error('❌ Failed to remove presence:', error);
-        }
+        this.channel = null;
     }
 }

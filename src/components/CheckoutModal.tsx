@@ -75,8 +75,11 @@ export const CheckoutModal: React.FC = () => {
                 setProducts(updatedProducts);
             }
 
+            const amountText = result.totalPrice > 0 ? ` for ₹${result.totalPrice.toFixed(2)}` : '';
+            const itemText = result.itemCount > 0 ? ` (${result.itemCount} items)` : '';
+
             setCheckoutMessage(
-                `Order ${result.orderId.slice(0, 8)} completed for ₹${result.totalPrice.toFixed(2)} (${result.itemCount} items).`
+                `Order ${result.orderId.slice(0, 8)} completed${amountText}${itemText}.`
             );
             setCompleted(true);
 
@@ -88,7 +91,13 @@ export const CheckoutModal: React.FC = () => {
             }, 3000);
         } catch (error: any) {
             console.error('Error during checkout:', error);
-            setErrorMessage(error?.message || 'Checkout failed. Please try again.');
+            const message = error?.message || '';
+
+            if (/insufficient stock|out of stock/i.test(message)) {
+                setErrorMessage('Some items are out of stock. Please refresh your cart and try again.');
+            } else {
+                setErrorMessage(message || 'Checkout failed. Please try again.');
+            }
         } finally {
             setProcessing(false);
         }

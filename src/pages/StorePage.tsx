@@ -3,8 +3,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Canvas } from '@react-three/fiber';
 import { PerspectiveCamera } from '@react-three/drei';
-import { PresenceManager } from '../lib/realtime/PresenceManager';
-import { ChatManager } from '../lib/realtime/ChatManager';
+import { PresenceManager, STORE_ROOM_CAPACITY } from '../lib/realtime/PresenceManager';
 import { supabase } from '../lib/supabase/client';
 import { useGameStore } from '../lib/store/gameStore';
 import { useAuth } from '../lib/auth/AuthProvider';
@@ -58,7 +57,6 @@ const buildStoreTheme = (storeId: string, storeName?: string): StoreTheme => {
 
 export const StorePage: React.FC = () => {
     const presenceManagerRef = useRef<PresenceManager | null>(null);
-    const chatManagerRef = useRef<ChatManager | null>(null);
 
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -66,6 +64,8 @@ export const StorePage: React.FC = () => {
 
     const [loading, setLoading] = useState(true);
     const [loadingProgress, setLoadingProgress] = useState(0);
+    const [entryBlockedMessage, setEntryBlockedMessage] = useState<string | null>(null);
+    const [blockedOccupancy, setBlockedOccupancy] = useState<number>(STORE_ROOM_CAPACITY);
     const [storeTheme, setStoreTheme] = useState<StoreTheme>(() =>
         buildStoreTheme(storeId || 'store', 'Store')
     );
@@ -84,6 +84,7 @@ export const StorePage: React.FC = () => {
 
     const {
         products,
+        otherPlayers,
         setProducts,
         setChatMessages,
         setOtherPlayers,
@@ -93,6 +94,8 @@ export const StorePage: React.FC = () => {
         setIsCheckoutOpen,
         setCurrentScene,
     } = useGameStore();
+
+    const usersInside = otherPlayers.length + 1;
 
     // Optimized notification system
     const addNotification = useCallback((message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
@@ -107,13 +110,14 @@ export const StorePage: React.FC = () => {
     const handleWave = useCallback(() => {
         if (!selectedPlayer) return;
         addNotification(`👋 You waved at ${selectedPlayer.username}!`, 'success');
-        // TODO: Send wave event to other player via Supabase
+        void presenceManagerRef.current?.sendPlayerInteraction('wave', selectedPlayer.user_id);
         setSelectedPlayer(null);
     }, [selectedPlayer, addNotification]);
 
     const handleChat = useCallback(() => {
         if (!selectedPlayer) return;
         addNotification(`💬 Starting chat with ${selectedPlayer.username}...`, 'info');
+        void presenceManagerRef.current?.sendPlayerInteraction('chat', selectedPlayer.user_id);
         setSelectedPlayer(null);
         // Open chat panel
         useGameStore.getState().setIsChatOpen(true);
@@ -122,6 +126,7 @@ export const StorePage: React.FC = () => {
     const handleFollow = useCallback(() => {
         if (!selectedPlayer) return;
         addNotification(`👥 Following ${selectedPlayer.username}...`, 'info');
+        void presenceManagerRef.current?.sendPlayerInteraction('follow', selectedPlayer.user_id);
         setSelectedPlayer(null);
     }, [selectedPlayer, addNotification]);
 
@@ -158,6 +163,8 @@ export const StorePage: React.FC = () => {
         setCurrentScene('store');
         setOtherPlayers([]);
         setChatMessages([]);
+        setEntryBlockedMessage(null);
+        setBlockedOccupancy(STORE_ROOM_CAPACITY);
 
         const initializeStore = async () => {
             console.log('🚀 3D Store initialization started');
@@ -169,6 +176,7 @@ export const StorePage: React.FC = () => {
                 // ✅ Load user profile (supports both legacy users and new profiles table)
                 setLoadingProgress(30);
                 let username: string | null = null;
+            let avatarUrl: string | null = null;
 
                 const { data: usersProfile, error: usersError } = await db
                     .from('users')
@@ -183,12 +191,13 @@ export const StorePage: React.FC = () => {
                 if (!username) {
                     const { data: publicProfile, error: profilesError } = await db
                         .from('profiles')
-                        .select('username')
+                        .select('username, avatar_url')
                         .eq('id', user.id)
                         .maybeSingle();
 
                     if (!profilesError && publicProfile?.username) {
                         username = publicProfile.username;
+                        avatarUrl = publicProfile.avatar_url || null;
                     }
                 }
 
@@ -203,7 +212,7 @@ export const StorePage: React.FC = () => {
                 setLoadingProgress(70);
                 const { data: storeData, error: storeError } = await db
                     .from('stores')
-                    .select('id, store_name')
+                    .select('id, store_name, owner_id')
                     .eq('id', storeId)
                     .maybeSingle();
 
@@ -235,29 +244,37 @@ export const StorePage: React.FC = () => {
                 }
                 setLoadingProgress(80);
 
-                // 🌐 Initialize presence manager
-                const presenceManager = new PresenceManager(user.id, username, storeId || 'unknown-store');
+                // 🌐 Initialize unified store room manager (presence + movement + chat + interactions)
+                const presenceManager = new PresenceManager(user.id, username, storeData.id, {
+                    isStoreOwner: storeData.owner_id === user.id,
+                    avatarUrl,
+                });
                 presenceManagerRef.current = presenceManager;
-                presenceManager.initialize().catch((err) =>
-                    console.error('❌ Presence init failed', err)
-                );
-
-                // 💬 Initialize chat manager
-                const chatManager = new ChatManager(user.id, username, storeData.id);
-                chatManagerRef.current = chatManager;
-                chatManager.initialize().catch((err) =>
-                    console.error('❌ Chat init failed', err)
-                );
+                await presenceManager.initialize();
 
                 setLoadingProgress(100);
                 console.log('✅ 3D Store ready');
 
                 setTimeout(() => {
                     setLoading(false);
-                    addNotification(`Welcome to ${storeTheme.name}! 🎉`, 'success');
+                    addNotification(`Welcome to ${storeData.store_name}! 🎉`, 'success');
                 }, 300);
-            } catch (error) {
+            } catch (error: any) {
                 console.error('❌ Store initialization failed', error);
+
+                if ((error?.message || '').toLowerCase().includes('store full')) {
+                    const occupancyValue = Number(error?.occupancy);
+                    if (Number.isFinite(occupancyValue) && occupancyValue > 0) {
+                        setBlockedOccupancy(Math.min(occupancyValue, STORE_ROOM_CAPACITY));
+                    } else {
+                        setBlockedOccupancy(STORE_ROOM_CAPACITY);
+                    }
+                    setEntryBlockedMessage('Store Full');
+                    setLoading(false);
+                    addNotification('Store Full', 'warning');
+                    return;
+                }
+
                 setLoading(false);
                 addNotification('Failed to initialize store', 'error');
             }
@@ -267,7 +284,6 @@ export const StorePage: React.FC = () => {
 
         return () => {
             void presenceManagerRef.current?.cleanup();
-            void chatManagerRef.current?.cleanup();
             setChatMessages([]);
             setOtherPlayers([]);
         };
@@ -296,6 +312,24 @@ export const StorePage: React.FC = () => {
                 progress={loadingProgress}
                 message="Loading 3D virtual store..."
             />
+        );
+    }
+
+    if (entryBlockedMessage) {
+        return (
+            <div className={styles.blockedState}>
+                <div className={styles.blockedCard}>
+                    <h2>{entryBlockedMessage}</h2>
+                    <p>This store has reached the maximum of {STORE_ROOM_CAPACITY} active shoppers.</p>
+                    <p className={styles.blockedOccupancy}>Users inside: {blockedOccupancy} / {STORE_ROOM_CAPACITY}</p>
+                    <button
+                        className={styles.blockedButton}
+                        onClick={() => navigate('/mall')}
+                    >
+                        ← Back to Mall
+                    </button>
+                </div>
+            </div>
         );
     }
 
@@ -335,11 +369,15 @@ export const StorePage: React.FC = () => {
                 <span className={styles.storeName}>{storeTheme.name}</span>
             </div>
 
+            <div className={styles.occupancyBadge}>
+                Users inside: {usersInside} / {STORE_ROOM_CAPACITY}
+            </div>
+
             <>
                 <HUD />
 
                 <ChatPanel
-                    chatManager={chatManagerRef.current}
+                    chatManager={presenceManagerRef.current}
                     inputManager={null}
                 />
 
