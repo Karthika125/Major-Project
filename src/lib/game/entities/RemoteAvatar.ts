@@ -2,10 +2,15 @@ import { Avatar } from './Avatar';
 import type { Vector2D, Direction } from '../types';
 
 export interface RemoteAvatarData {
-    position_x: number;
-    position_y: number;
+    position?: {
+        x: number;
+        y: number;
+        z?: number;
+    };
+    position_x?: number;
+    position_y?: number;
     position_z?: number;
-    direction: Direction;
+    direction?: Direction;
     is_moving: boolean;
     current_action?: 'idle' | 'walking' | 'viewing_product' | 'shopping';
     viewing_product_id?: string;
@@ -15,12 +20,18 @@ export interface RemoteAvatarData {
         style: string;
     };
     animation_state?: 'idle' | 'walking' | 'waving' | 'shopping';
+    rotation_yaw?: number;
+    animation?: 'idle' | 'walk' | 'run';
 }
 
 export class RemoteAvatar extends Avatar {
     private targetPosition: Vector2D;
     private targetPositionZ: number = 0;
-    private interpolationSpeed: number = 0.15; // Smoother for 60fps updates
+    private interpolationSpeed: number = 0.15;
+    private yawInterpolationSpeed: number = 0.15;
+    private yaw: number = 0;
+    private targetYaw: number = 0;
+    private movementAnimation: 'idle' | 'walk' | 'run' = 'idle';
     public currentAction: 'idle' | 'walking' | 'viewing_product' | 'shopping' = 'idle';
     public viewingProductId?: string;
     public avatarCustomization?: {
@@ -36,31 +47,66 @@ export class RemoteAvatar extends Avatar {
         this.targetPosition = { ...position };
     }
 
+    private normalizeYaw(yaw: number): number {
+        const twoPi = Math.PI * 2;
+        return ((yaw % twoPi) + twoPi) % twoPi;
+    }
+
+    private lerpAngle(current: number, target: number, alpha: number): number {
+        const twoPi = Math.PI * 2;
+        let delta = (target - current) % twoPi;
+        if (delta > Math.PI) delta -= twoPi;
+        if (delta < -Math.PI) delta += twoPi;
+        return this.normalizeYaw(current + delta * alpha);
+    }
+
+    private yawToDirection(yaw: number): Direction {
+        const normalized = this.normalizeYaw(yaw);
+        const quarter = Math.PI / 4;
+
+        if (normalized >= 7 * quarter || normalized < quarter) return 'up';
+        if (normalized < 3 * quarter) return 'right';
+        if (normalized < 5 * quarter) return 'down';
+        return 'left';
+    }
+
     updateFromServer(data: RemoteAvatarData): void {
-        // Update target position for smooth interpolation
-        this.targetPosition = { 
-            x: data.position_x, 
-            y: data.position_y 
+        const nextX = Number(data.position?.x ?? data.position_x ?? this.targetPosition.x);
+        const nextY = Number(
+            data.position?.y ??
+            data.position_y ??
+            data.position?.z ??
+            this.targetPosition.y
+        );
+
+        this.targetPosition = {
+            x: nextX,
+            y: nextY,
         };
-        this.targetPositionZ = data.position_z || 0;
-        
-        // Update state immediately
-        this.direction = data.direction;
+        this.targetPositionZ = Number(data.position_z ?? data.position?.z ?? 0);
+
+        const serverYaw = Number(data.rotation_yaw ?? this.targetYaw);
+        this.targetYaw = this.normalizeYaw(serverYaw);
+
+        this.direction = data.direction || this.yawToDirection(this.targetYaw);
         this.isMoving = data.is_moving;
         this.currentAction = data.current_action || 'idle';
         this.viewingProductId = data.viewing_product_id;
         this.avatarCustomization = data.avatar_customization;
-        this.animationState = data.animation_state || (data.is_moving ? 'walking' : 'idle');
+
+        this.movementAnimation = data.animation || (data.is_moving ? 'walk' : 'idle');
+        this.animationState =
+            data.animation_state ||
+            (this.movementAnimation === 'idle' ? 'idle' : 'walking');
     }
 
     update(deltaTime: number): void {
-        // Smooth interpolation to target position (for 60fps updates)
+        // Smooth interpolation to target position (lerp factor 0.15).
         const dx = this.targetPosition.x - this.position.x;
         const dy = this.targetPosition.y - this.position.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance > 0.01) {
-            // Use linear interpolation
             this.position.x += dx * this.interpolationSpeed;
             this.position.y += dy * this.interpolationSpeed;
             this.isMoving = true;
@@ -71,10 +117,12 @@ export class RemoteAvatar extends Avatar {
             }
         }
 
-        // Update animation time for procedural animations
+        // Smooth rotation interpolation so remote players turn naturally.
+        this.yaw = this.lerpAngle(this.yaw, this.targetYaw, this.yawInterpolationSpeed);
+        this.direction = this.yawToDirection(this.yaw);
+
         this.animationTime += deltaTime;
 
-        // Update animation state based on movement
         if (this.isMoving) {
             this.animationState = 'walking';
         } else if (this.currentAction === 'viewing_product') {
@@ -83,8 +131,11 @@ export class RemoteAvatar extends Avatar {
             this.animationState = 'idle';
         }
 
-        // Update base avatar
         super.update(deltaTime);
+    }
+
+    getYaw(): number {
+        return this.yaw;
     }
 
     getAnimationOffset(): { x: number; y: number; z: number } {

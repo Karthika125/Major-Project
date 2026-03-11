@@ -59,6 +59,8 @@ export const StorePage: React.FC = () => {
     const presenceManagerRef = useRef<PresenceManager | null>(null);
 
     const { user } = useAuth();
+    const userId = user?.id;
+    const userEmail = user?.email;
     const navigate = useNavigate();
     const { storeId } = useParams<{ storeId: string }>();
 
@@ -141,24 +143,18 @@ export const StorePage: React.FC = () => {
         }
     }, []);
 
-    // Keyboard shortcut for testing player interaction
     useEffect(() => {
-        const handleKeyPress = (e: KeyboardEvent) => {
-            if (e.key === 't' || e.key === 'T') {
-                e.preventDefault();
-                setSelectedPlayer({ user_id: 'test-npc', username: 'Alex (Test NPC)' });
-                addNotification('Testing player interaction! 🎮', 'info');
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyPress);
-        return () => window.removeEventListener('keydown', handleKeyPress);
-    }, [addNotification]);
-    useEffect(() => {
-        if (!user) {
+        if (!userId) {
             navigate('/login');
             return;
         }
+
+        if (!storeId) {
+            navigate('/mall');
+            return;
+        }
+
+        let isDisposed = false;
 
         setCurrentScene('store');
         setOtherPlayers([]);
@@ -181,7 +177,7 @@ export const StorePage: React.FC = () => {
                 const { data: usersProfile, error: usersError } = await db
                     .from('users')
                     .select('username')
-                    .eq('id', user.id)
+                    .eq('id', userId)
                     .maybeSingle();
 
                 if (!usersError && usersProfile?.username) {
@@ -192,7 +188,7 @@ export const StorePage: React.FC = () => {
                     const { data: publicProfile, error: profilesError } = await db
                         .from('profiles')
                         .select('username, avatar_url')
-                        .eq('id', user.id)
+                        .eq('id', userId)
                         .maybeSingle();
 
                     if (!profilesError && publicProfile?.username) {
@@ -202,7 +198,7 @@ export const StorePage: React.FC = () => {
                 }
 
                 if (!username) {
-                    username = user.email?.split('@')[0] || 'Player';
+                    username = userEmail?.split('@')[0] || 'Player';
                     addNotification('Using fallback username for this session.', 'warning');
                 }
                 console.log('✅ Profile loaded');
@@ -226,6 +222,10 @@ export const StorePage: React.FC = () => {
                     return;
                 }
 
+                if (isDisposed) {
+                    return;
+                }
+
                 setStoreTheme(buildStoreTheme(storeData.id, storeData.store_name));
 
                 // ✅ Load store products only
@@ -244,22 +244,51 @@ export const StorePage: React.FC = () => {
                 }
                 setLoadingProgress(80);
 
+                if (isDisposed) {
+                    return;
+                }
+
+                const existingManager = presenceManagerRef.current;
+                if (existingManager) {
+                    presenceManagerRef.current = null;
+                    await existingManager.cleanup();
+                }
+
+                if (isDisposed) {
+                    return;
+                }
+
                 // 🌐 Initialize unified store room manager (presence + movement + chat + interactions)
-                const presenceManager = new PresenceManager(user.id, username, storeData.id, {
-                    isStoreOwner: storeData.owner_id === user.id,
+                const presenceManager = new PresenceManager(userId, username, storeData.id, {
+                    isStoreOwner: storeData.owner_id === userId,
                     avatarUrl,
                 });
                 presenceManagerRef.current = presenceManager;
                 await presenceManager.initialize();
 
+                if (isDisposed) {
+                    if (presenceManagerRef.current === presenceManager) {
+                        presenceManagerRef.current = null;
+                    }
+                    await presenceManager.cleanup();
+                    return;
+                }
+
                 setLoadingProgress(100);
                 console.log('✅ 3D Store ready');
 
                 setTimeout(() => {
+                    if (isDisposed) {
+                        return;
+                    }
                     setLoading(false);
                     addNotification(`Welcome to ${storeData.store_name}! 🎉`, 'success');
                 }, 300);
             } catch (error: any) {
+                if (isDisposed) {
+                    return;
+                }
+
                 console.error('❌ Store initialization failed', error);
 
                 if ((error?.message || '').toLowerCase().includes('store full')) {
@@ -280,14 +309,19 @@ export const StorePage: React.FC = () => {
             }
         };
 
-        initializeStore();
+        void initializeStore();
 
         return () => {
-            void presenceManagerRef.current?.cleanup();
+            isDisposed = true;
+            const manager = presenceManagerRef.current;
+            presenceManagerRef.current = null;
+            if (manager) {
+                void manager.cleanup();
+            }
             setChatMessages([]);
             setOtherPlayers([]);
         };
-    }, [user, navigate, setProducts, setChatMessages, addNotification, storeId, setCurrentScene, setOtherPlayers]);
+    }, [userId, userEmail, navigate, setProducts, setChatMessages, addNotification, storeId, setCurrentScene, setOtherPlayers]);
 
     // Handle product click in 3D store
     const handleProductClick = useCallback((product: typeof products[0]) => {

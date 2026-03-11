@@ -81,6 +81,14 @@ export class InputManager {
         return this.isKeyPressed('d') || this.isKeyPressed('arrowright');
     }
 
+    /**
+     * Returns true while the player holds Shift (sprint / run modifier).
+     * Works with both Left Shift and Right Shift.
+     */
+    isSprinting(): boolean {
+        return this.isKeyPressed('shift');
+    }
+
     getMousePosition(): { x: number; y: number } {
         return { ...this.mousePosition };
     }

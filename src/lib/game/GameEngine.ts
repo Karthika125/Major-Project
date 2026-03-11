@@ -3,9 +3,8 @@ import { InputManager } from './InputManager';
 import { StoreRenderer } from './StoreRenderer';
 import { PlayerAvatar } from './entities/PlayerAvatar';
 import { RemoteAvatar } from './entities/RemoteAvatar';
-import { NPCAvatar } from './entities/NPCAvatar';
 import { ProductEntity } from './entities/ProductEntity';
-import { SPAWN_POINT, isInCheckoutArea, STORE_WIDTH, STORE_HEIGHT } from './Store';
+import { SPAWN_POINT, isInCheckoutArea } from './Store';
 import type { Database } from '../supabase/types';
 
 type Product = Database['public']['Tables']['products']['Row'];
@@ -19,7 +18,6 @@ export class GameEngine {
 
     private playerAvatar: PlayerAvatar | null = null;
     private remoteAvatars: Map<string, RemoteAvatar> = new Map();
-    private npcAvatars: NPCAvatar[] = [];
     private products: ProductEntity[] = [];
 
     private lastTime: number = 0;
@@ -45,29 +43,15 @@ export class GameEngine {
         this.resize();
         window.addEventListener('resize', this.handleResize);
 
+        // Attach mouse-look pointer-lock to the canvas
+        this.camera.mount(canvas);
+
         // Mouse wheel for zoom
         this.canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
             this.camera.adjustZoom(delta);
         }, { passive: false });
-
-        this.spawnNPCs();
-    }
-
-    private spawnNPCs(): void {
-        const npcNames = ['Alex', 'Sam', 'Jordan', 'Taylor', 'Casey'];
-
-        for (let i = 0; i < 5; i++) {
-            const x = Math.random() * (STORE_WIDTH - 200) + 100;
-            const y = Math.random() * (STORE_HEIGHT - 200) + 100;
-            const npc = new NPCAvatar(
-                `npc-${i}`,
-                npcNames[i],
-                { x, y }
-            );
-            this.npcAvatars.push(npc);
-        }
     }
 
     private resize(): void {
@@ -90,11 +74,19 @@ export class GameEngine {
     }
 
     updateRemotePlayer(userId: string, username: string, data: any): void {
+        const initialX = Number(data?.position?.x ?? data?.position_x ?? 0);
+        const initialY = Number(
+            data?.position?.y ??
+            data?.position_y ??
+            data?.position?.z ??
+            0,
+        );
+
         let avatar = this.remoteAvatars.get(userId);
         if (!avatar) {
             avatar = new RemoteAvatar(userId, username, {
-                x: data.position_x,
-                y: data.position_y,
+                x: initialX,
+                y: initialY,
             });
             this.remoteAvatars.set(userId, avatar);
         }
@@ -168,6 +160,8 @@ export class GameEngine {
         if (this.playerAvatar) {
             const wasInCheckout = isInCheckoutArea(this.playerAvatar.position);
 
+            // Sync camera yaw so WASD movement is relative to facing direction
+            this.playerAvatar.setYaw(this.camera.yaw);
             this.playerAvatar.update(deltaTime);
 
             // Check if entered checkout area
@@ -176,10 +170,11 @@ export class GameEngine {
                 this.onCheckoutEnter();
             }
 
-            // DO NOT follow player - keep camera centered on store
-            // Camera stays fixed to show entire store
+            // First-person: camera position tracks the player exactly
+            this.camera.follow(this.playerAvatar.position);
 
-            // Send position update (throttled by caller)
+            // Broadcast position + rotation_yaw to other clients.
+            // camera.yaw is included via playerAvatar.getState().rotation_yaw.
             if (this.onPositionUpdate) {
                 this.onPositionUpdate(this.playerAvatar.getState());
             }
@@ -190,17 +185,12 @@ export class GameEngine {
             });
         }
 
-        // Update camera (but don't follow player)
+        // Advance camera interpolation
         this.camera.update();
 
         // Update remote avatars
         this.remoteAvatars.forEach((avatar) => {
             avatar.update(deltaTime);
-        });
-
-        // Update NPCs
-        this.npcAvatars.forEach((npc) => {
-            npc.update(deltaTime);
         });
 
         // Handle clicks - use SCREEN coordinates instead of world coordinates
@@ -238,36 +228,6 @@ export class GameEngine {
                 }
             });
 
-            // Check NPCs in SCREEN space
-            if (!clickedPlayer) {
-                this.npcAvatars.forEach((npc) => {
-                    const screenPos = this.camera.worldToScreen(npc.position);
-                    const screenBounds = {
-                        x: screenPos.x,
-                        y: screenPos.y,
-                        width: npc.width * this.camera.zoom,
-                        height: npc.height * this.camera.zoom
-                    };
-
-                    const padding = 30;
-                    if (
-                        mousePos.x >= screenBounds.x - padding &&
-                        mousePos.x <= screenBounds.x + screenBounds.width + padding &&
-                        mousePos.y >= screenBounds.y - padding &&
-                        mousePos.y <= screenBounds.y + screenBounds.height + padding
-                    ) {
-                        console.log('✅ Clicked on NPC:', npc.username);
-                        if (this.onPlayerClick) {
-                            this.onPlayerClick({
-                                user_id: npc.userId,
-                                username: npc.username
-                            });
-                        }
-                        clickedPlayer = true;
-                    }
-                });
-            }
-
             // If didn't click a player, check products
             if (!clickedPlayer) {
                 for (const product of this.products) {
@@ -283,35 +243,55 @@ export class GameEngine {
     }
 
     private render(): void {
-        // Clear canvas
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        const W = this.canvas.width;
+        const H = this.canvas.height;
 
-        // Render store
-        this.storeRenderer.render(this.ctx, this.camera.position);
+        // Clear and fill the full screen before the world transform is applied.
+        // This prevents transparent corners when the camera is rotated (yaw ≠ 0).
+        this.ctx.fillStyle = '#0a0a0f';
+        this.ctx.fillRect(0, 0, W, H);
 
-        // Render player avatar
-        if (this.playerAvatar) {
-            this.playerAvatar.render(this.ctx, this.camera.position);
-        }
+        // ── First-person canvas transform ────────────────────────────────────
+        // 1. Translate to screen centre so rotation pivots there.
+        // 2. Rotate by −yaw: the world appears to turn as the player looks around.
+        // 3. Scale by zoom.
+        // 4. Translate so the player's world position maps to screen centre.
+        //
+        // After this transform every render call can pass { x:0, y:0 } as the
+        // camera offset because the transform handles the full mapping.
+        // ─────────────────────────────────────────────────────────────────────
+        const cx = W / 2;
+        const cy = H / 2;
+        const zeroCam = { x: 0, y: 0 };
+
+        this.ctx.save();
+        this.ctx.translate(cx, cy);
+        this.ctx.rotate(-this.camera.yaw);
+        this.ctx.scale(this.camera.zoom, this.camera.zoom);
+        this.ctx.translate(-this.camera.position.x, -this.camera.position.y);
+
+        // Render store environment
+        this.storeRenderer.render(this.ctx, zeroCam);
 
         // Render remote avatars (other players)
         this.remoteAvatars.forEach((avatar) => {
-            avatar.render(this.ctx, this.camera.position);
-        });
-
-        // Render NPCs
-        this.npcAvatars.forEach((npc) => {
-            npc.render(this.ctx, this.camera.position);
+            avatar.render(this.ctx, zeroCam);
         });
 
         // Render products
         this.products.forEach((product) => {
-            product.render(this.ctx, this.camera.position);
+            product.render(this.ctx, zeroCam);
         });
+
+        // Local player avatar is NOT rendered in first-person view because
+        // the camera is attached to the player's eye position.
+
+        this.ctx.restore();
     }
 
     cleanup(): void {
         this.stop();
+        this.camera.unmount();
         this.inputManager.cleanup();
         window.removeEventListener('resize', this.handleResize);
     }
