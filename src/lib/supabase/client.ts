@@ -54,17 +54,34 @@ export const signUp = async (
     if (data.session) {
         console.log('✅ User auto-confirmed, creating profile...');
         
-        const { error: profileError } = await supabase.from("users").insert({
+        const { error: usersProfileError } = await supabase.from("users").insert({
             id: data.user.id,
             username,
             avatar_type: "default",
         });
 
-        if (profileError) {
-            console.error('❌ Profile creation error:', profileError);
+        if (usersProfileError) {
+            console.error('❌ Legacy profile creation error:', usersProfileError);
             // If profile already exists, that's ok (might be from trigger)
-            if (profileError.code !== '23505') { // 23505 = unique violation
-                throw profileError;
+            if (usersProfileError.code !== '23505' && usersProfileError.code !== '42P01') {
+                throw usersProfileError;
+            }
+        }
+
+        const { error: publicProfileError } = await (supabase as any)
+            .from('profiles')
+            .upsert(
+                {
+                    id: data.user.id,
+                    username,
+                },
+                { onConflict: 'id' }
+            );
+
+        if (publicProfileError) {
+            console.error('❌ Public profile creation error:', publicProfileError);
+            if (publicProfileError.code !== '23505' && publicProfileError.code !== '42P01') {
+                throw publicProfileError;
             }
         }
     } else {

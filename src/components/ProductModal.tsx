@@ -2,10 +2,14 @@ import React from 'react';
 import { useGameStore } from '../lib/store/gameStore';
 import { supabase } from '../lib/supabase/client';
 import { useAuth } from '../lib/auth/AuthProvider';
+import { addProductToStoreCart } from '../lib/supabase/cartService';
 import type { Database } from '../lib/supabase/types';
 import styles from './ProductModal.module.css';
 
-type Product = Database['public']['Tables']['products']['Row'];
+type Product = Database['public']['Tables']['products']['Row'] & {
+    stock?: number | null;
+    store_id?: string;
+};
 
 interface Props {
     product: Product;
@@ -14,55 +18,30 @@ interface Props {
 
 export const ProductModal: React.FC<Props> = ({ product, onClose }) => {
     const { user } = useAuth();
-    const { addToCart } = useGameStore();
+    const { setCartItems, setIsCartOpen } = useGameStore();
     const [adding, setAdding] = React.useState(false);
 
+    const stock = typeof product.stock === 'number' ? product.stock : null;
+    const isOutOfStock = stock !== null && stock <= 0;
+
     const handleAddToCart = async () => {
-        if (!user) return;
+        if (!user || isOutOfStock) return;
 
         setAdding(true);
         try {
-            // Check if item already exists
-            const { data: existing } = await supabase
-                .from('cart_items')
-                .select('*')
-                .eq('user_id', user.id)
-                .eq('product_id', product.id)
-                .single();
+            const { items } = await addProductToStoreCart({
+                userId: user.id,
+                productId: product.id,
+                storeId: product.store_id,
+                quantity: 1,
+            });
 
-            if (existing) {
-                // Update quantity
-                const { data, error } = await supabase
-                    .from('cart_items')
-                    .update({ quantity: existing.quantity + 1 })
-                    .eq('id', existing.id)
-                    .select()
-                    .single();
-
-                if (error) throw error;
-
-                // Update local state
-                addToCart({ ...data, product } as any);
-            } else {
-                // Insert new item
-                const { data, error } = await supabase
-                    .from('cart_items')
-                    .insert({
-                        user_id: user.id,
-                        product_id: product.id,
-                        quantity: 1,
-                    })
-                    .select()
-                    .single();
-
-                if (error) throw error;
-
-                // Add to local state with product details
-                addToCart({ ...data, product } as any);
-            }
+            setCartItems(items as any);
+            setIsCartOpen(true);
 
             // Track activity
-            await supabase.from('user_activity').insert({
+            const db = supabase as any;
+            await db.from('user_activity').insert({
                 user_id: user.id,
                 product_id: product.id,
                 action_type: 'add_to_cart',
@@ -106,14 +85,17 @@ export const ProductModal: React.FC<Props> = ({ product, onClose }) => {
                         <p className={styles.description}>
                             {product.description || 'No description available'}
                         </p>
-                        <div className={styles.price}>${product.price}</div>
+                        <div className={styles.price}>₹{product.price}</div>
+                        <p className={styles.stock}>
+                            Stock: {stock === null ? 'N/A' : stock}
+                        </p>
 
                         <button
                             className={styles.addButton}
                             onClick={handleAddToCart}
-                            disabled={adding}
+                            disabled={adding || isOutOfStock}
                         >
-                            {adding ? 'Adding...' : '🛒 Add to Cart'}
+                            {isOutOfStock ? 'Out of Stock' : adding ? 'Adding...' : '🛒 Add to Cart'}
                         </button>
                     </div>
                 </div>

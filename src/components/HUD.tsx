@@ -31,12 +31,12 @@ export const HUD: React.FC = () => {
             </div>
 
             <div className={styles.bottomCenter}>
-                <button
+                {/*<button
                     className={styles.aiButton}
                     onClick={() => setIsAIAssistantOpen(true)}
                 >
                     🤖 AI Shopping Assistant
-                </button>
+                </button>*/}
             </div>
         </div>
     );

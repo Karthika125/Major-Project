@@ -1,6 +1,6 @@
 .cartButton {
     position: fixed;
-    top: 20px;
+    top: 84px;
     left: 20px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -12,7 +12,7 @@
     cursor: pointer;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     transition: transform 0.2s, box-shadow 0.2s;
-    z-index: 100;
+    z-index: 1200;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -34,7 +34,7 @@
 
 .panel {
     position: fixed;
-    top: 80px;
+    top: 144px;
     left: 20px;
     width: 400px;
     max-height: calc(100vh - 120px);
@@ -43,7 +43,7 @@
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
     display: flex;
     flex-direction: column;
-    z-index: 99;
+    z-index: 1199;
     animation: slideIn 0.3s;
 }
 
@@ -118,6 +118,31 @@
     border-radius: 12px;
     padding: 16px;
     margin-bottom: 12px;
+    display: grid;
+    grid-template-columns: 58px 1fr;
+    gap: 12px;
+    align-items: center;
+}
+
+.imageWrap {
+    width: 58px;
+    height: 58px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #eef2f7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.itemImage {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.itemImagePlaceholder {
+    font-size: 24px;
 }
 
 .itemInfo {
@@ -194,6 +219,25 @@
 .footer {
     padding: 20px;
     border-top: 2px solid #f0f0f0;
+}
+
+.checkoutButton {
+    width: 100%;
+    margin: 8px 0 10px;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    color: #fff;
+    background: linear-gradient(135deg, #2ECC71 0%, #27AE60 100%);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.checkoutButton:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(46, 204, 113, 0.35);
 }
 
 .total {

@@ -1,0 +1,371 @@
+.container {
+    min-height: 100vh;
+    background: var(--bg-color);
+    color: var(--text-color);
+    padding: 28px 32px 48px;
+}
+
+.loadingState {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(180deg, #FFF1D5 0%, #FFFFFF 100%);
+    color: #555;
+    font-size: 16px;
+}
+
+.header {
+    max-width: 1200px;
+    margin: 0 auto 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.title {
+    margin: 0;
+    font-size: 34px;
+    color: #333;
+    font-weight: 800;
+}
+
+.subtitle {
+    margin: 8px 0 0;
+    color: #666;
+    max-width: 720px;
+    line-height: 1.5;
+}
+
+.headerActions {
+    display: flex;
+    gap: 10px;
+}
+
+.tabBar {
+    max-width: 1200px;
+    margin: 20px auto 0;
+    display: flex;
+    gap: 10px;
+}
+
+.tabButton {
+    border: 1px solid rgba(158, 198, 243, 0.35);
+    border-radius: 999px;
+    background: #fff;
+    color: #333;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.tabButton:hover {
+    background: #f1f7ff;
+}
+
+.tabButtonActive {
+    background: #9EC6F3;
+    color: #fff;
+    border-color: transparent;
+}
+
+.formCard,
+.productsSection,
+.ordersSection {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid rgba(158, 198, 243, 0.3);
+    border-radius: 16px;
+    box-shadow: 0 10px 28px rgba(158, 198, 243, 0.15);
+    padding: 22px;
+}
+
+.productsSection {
+    margin-top: 20px;
+}
+
+.ordersSection {
+    margin-top: 20px;
+}
+
+.formCard h2,
+.productsSection h2,
+.ordersSection h2 {
+    margin: 0 0 16px;
+    color: #333;
+    font-size: 22px;
+}
+
+.formGrid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field {
+    display: grid;
+    gap: 8px;
+}
+
+.fullWidth {
+    grid-column: 1 / -1;
+}
+
+.field label {
+    color: #444;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.field input,
+.field textarea {
+    width: 100%;
+    border: 1px solid rgba(158, 198, 243, 0.45);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #fff;
+    color: #222;
+    font-size: 14px;
+}
+
+.field input:focus,
+.field textarea:focus {
+    outline: none;
+    border-color: #9EC6F3;
+    box-shadow: 0 0 0 3px rgba(158, 198, 243, 0.2);
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.primaryButton {
+    background: #9EC6F3;
+    color: #fff;
+}
+
+.primaryButton:hover:not(:disabled) {
+    background: #7BA8D9;
+}
+
+.secondaryButton {
+    background: #FFF1D5;
+    color: #333;
+    border: 1px solid rgba(158, 198, 243, 0.35);
+}
+
+.dangerButton {
+    background: #ffe6e6;
+    color: #b02727;
+    border: 1px solid rgba(176, 39, 39, 0.2);
+}
+
+.primaryButton:hover:not(:disabled),
+.secondaryButton:hover,
+.dangerButton:hover {
+    transform: translateY(-1px);
+}
+
+.primaryButton:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.error {
+    max-width: 1200px;
+    margin: 0 auto 16px;
+    background: rgba(244, 67, 54, 0.1);
+    color: #B71C1C;
+    border: 1px solid rgba(244, 67, 54, 0.25);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+}
+
+.emptyState {
+    border: 1px dashed rgba(158, 198, 243, 0.6);
+    border-radius: 12px;
+    color: #666;
+    background: rgba(255, 241, 213, 0.4);
+    padding: 22px;
+    text-align: center;
+}
+
+.productsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+}
+
+.productCard {
+    border: 1px solid rgba(158, 198, 243, 0.28);
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.productImageWrap {
+    width: 100%;
+    height: 170px;
+    background: #f8fbff;
+}
+
+.productImage {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.imagePlaceholder {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    font-size: 42px;
+    color: #97a8ba;
+}
+
+.productContent {
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+}
+
+.productContent h3 {
+    margin: 0;
+    color: #333;
+    font-size: 17px;
+}
+
+.productContent p {
+    margin: 0;
+    color: #666;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.metaRow {
+    display: flex;
+    justify-content: space-between;
+    color: #333;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.cardActions {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.ordersGrid {
+    display: grid;
+    gap: 14px;
+}
+
+.orderCard {
+    border: 1px solid rgba(158, 198, 243, 0.28);
+    border-radius: 12px;
+    padding: 14px;
+    display: grid;
+    gap: 10px;
+    background: #fff;
+}
+
+.orderHeader {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.orderId {
+    font-weight: 800;
+    color: #333;
+}
+
+.orderDate {
+    color: #666;
+    font-size: 13px;
+}
+
+.orderMeta {
+    color: #444;
+    font-size: 14px;
+}
+
+.orderItemsList {
+    display: grid;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 10px;
+    background: #f8fbff;
+    border: 1px solid rgba(158, 198, 243, 0.2);
+}
+
+.orderItem {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #444;
+}
+
+.statusActions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.statusButton {
+    border: 1px solid rgba(158, 198, 243, 0.4);
+    background: #fff;
+    color: #333;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: capitalize;
+    cursor: pointer;
+}
+
+.statusButton:hover:not(:disabled) {
+    background: #f1f7ff;
+}
+
+.statusButtonActive {
+    background: #9EC6F3;
+    color: #fff;
+    border-color: transparent;
+}
+
+.statusButton:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+    .formGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .container {
+        padding: 20px 14px 36px;
+    }
+}

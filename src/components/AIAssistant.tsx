@@ -26,15 +26,15 @@ export const AIAssistant: React.FC = () => {
 
             if (lowerInput.includes('recommend') || lowerInput.includes('suggest')) {
                 const randomProducts = products.sort(() => 0.5 - Math.random()).slice(0, 3);
-                response = `I recommend checking out these products:\n${randomProducts.map(p => `• ${p.name} - $${p.price}`).join('\n')}`;
+                response = `I recommend checking out these products:\n${randomProducts.map(p => `• ${p.name} - ₹${p.price}`).join('\n')}`;
             } else if (lowerInput.includes('price') || lowerInput.includes('cost')) {
-                response = 'Our products range from $24.99 to $299.99. What category are you interested in?';
+                response = 'Our products range from ₹24.99 to ₹299.99. What category are you interested in?';
             } else if (lowerInput.includes('electronics')) {
                 const electronics = products.filter(p => p.category === 'Electronics');
-                response = `We have ${electronics.length} electronics items:\n${electronics.map(p => `• ${p.name} - $${p.price}`).join('\n')}`;
+                response = `We have ${electronics.length} electronics items:\n${electronics.map(p => `• ${p.name} - ₹${p.price}`).join('\n')}`;
             } else if (lowerInput.includes('sports')) {
                 const sports = products.filter(p => p.category === 'Sports');
-                response = `We have ${sports.length} sports items:\n${sports.map(p => `• ${p.name} - $${p.price}`).join('\n')}`;
+                response = `We have ${sports.length} sports items:\n${sports.map(p => `• ${p.name} - ₹${p.price}`).join('\n')}`;
             } else if (lowerInput.includes('help')) {
                 response = 'I can help you:\n• Find products by category\n• Get recommendations\n• Answer questions about prices\n• Suggest matching items\n\nJust ask me anything!';
             } else {

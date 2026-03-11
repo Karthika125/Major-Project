@@ -1,0 +1,89 @@
+.formGrid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field {
+    display: grid;
+    gap: 8px;
+}
+
+.fullWidth {
+    grid-column: 1 / -1;
+}
+
+.field label {
+    color: #444;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.field input,
+.field textarea {
+    width: 100%;
+    border: 1px solid rgba(158, 198, 243, 0.45);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #fff;
+    color: #222;
+    font-size: 14px;
+}
+
+.field input:focus,
+.field textarea:focus {
+    outline: none;
+    border-color: #9EC6F3;
+    box-shadow: 0 0 0 3px rgba(158, 198, 243, 0.2);
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.primaryButton,
+.secondaryButton {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.primaryButton {
+    background: #9EC6F3;
+    color: #fff;
+}
+
+.primaryButton:hover:not(:disabled) {
+    background: #7BA8D9;
+    transform: translateY(-1px);
+}
+
+.secondaryButton {
+    background: #FFF1D5;
+    color: #333;
+    border: 1px solid rgba(158, 198, 243, 0.35);
+}
+
+.secondaryButton:hover:not(:disabled) {
+    transform: translateY(-1px);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.field input:disabled,
+.field textarea:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+    .formGrid {
+        grid-template-columns: 1fr;
+    }
+}

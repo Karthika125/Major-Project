@@ -119,6 +119,7 @@ export interface Database {
             chat_messages: {
                 Row: {
                     id: string
+                    store_id: string | null
                     user_id: string
                     username: string
                     message: string
@@ -128,6 +129,7 @@ export interface Database {
                 }
                 Insert: {
                     id?: string
+                    store_id?: string | null
                     user_id: string
                     username: string
                     message: string
@@ -137,6 +139,7 @@ export interface Database {
                 }
                 Update: {
                     id?: string
+                    store_id?: string | null
                     user_id?: string
                     username?: string
                     message?: string

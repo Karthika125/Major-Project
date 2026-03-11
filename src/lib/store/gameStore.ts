@@ -5,8 +5,35 @@ type Product = Database['public']['Tables']['products']['Row'];
 type CartItem = Database['public']['Tables']['cart_items']['Row'] & {
     product: Product;
 };
-type ChatMessage = Database['public']['Tables']['chat_messages']['Row'];
-type UserPresence = Database['public']['Tables']['user_presence']['Row'];
+type ChatMessage = {
+    id: string;
+    user_id: string;
+    username: string;
+    message: string;
+    timestamp: string;
+};
+type UserPresence = Database['public']['Tables']['user_presence']['Row'] & {
+    avatar_url?: string | null;
+    store_id?: string;
+    position?: {
+        x: number;
+        y: number;
+        z: number;
+    };
+    rotation?: {
+        x: number;
+        y: number;
+        z: number;
+    };
+    current_action?: 'idle' | 'walking' | 'viewing_product' | 'shopping';
+    viewing_product_id?: string;
+    avatar_customization?: {
+        bodyColor: string;
+        skinTone: string;
+        style: string;
+    };
+    animation_state?: 'idle' | 'walking' | 'waving' | 'shopping';
+};
 
 interface GameState {
     // User
@@ -78,7 +105,7 @@ export const useGameStore = create<GameState>((set) => ({
                 return {
                     cartItems: state.cartItems.map((i) =>
                         i.product_id === item.product_id
-                            ? { ...i, quantity: i.quantity + item.quantity }
+                            ? { ...i, ...item, quantity: item.quantity }
                             : i
                     ),
                 };
@@ -109,11 +136,40 @@ export const useGameStore = create<GameState>((set) => ({
     otherPlayers: [],
     setOtherPlayers: (players) => set({ otherPlayers: players }),
     updatePlayerPosition: (userId, position) =>
-        set((state) => ({
-            otherPlayers: state.otherPlayers.map((p) =>
-                p.user_id === userId ? { ...p, ...position } : p
-            ),
-        })),
+        set((state) => {
+            const existingPlayer = state.otherPlayers.find((p) => p.user_id === userId);
+
+            if (!existingPlayer) {
+                const fallbackPosition = (position as any).position || {
+                    x: Number((position as any).position_x || 0),
+                    y: 1.6,
+                    z: Number((position as any).position_y || 0),
+                };
+
+                const newPlayer: UserPresence = {
+                    user_id: userId,
+                    username: (position as any).username || 'Shopper',
+                    position_x: Number((position as any).position_x ?? fallbackPosition.x ?? 0),
+                    position_y: Number((position as any).position_y ?? fallbackPosition.z ?? 0),
+                    direction: (position as any).direction ?? 'down',
+                    is_moving: (position as any).is_moving ?? false,
+                    last_seen: (position as any).last_seen ?? new Date().toISOString(),
+                    ...(position as any),
+                };
+
+                return {
+                    otherPlayers: [...state.otherPlayers, newPlayer],
+                };
+            }
+
+            return {
+                otherPlayers: state.otherPlayers.map((player) =>
+                    player.user_id === userId
+                        ? ({ ...player, ...(position as any) } as UserPresence)
+                        : player
+                ),
+            };
+        }),
     removePlayer: (userId) =>
         set((state) => ({
             otherPlayers: state.otherPlayers.filter((p) => p.user_id !== userId),

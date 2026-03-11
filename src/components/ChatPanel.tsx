@@ -1,11 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { useGameStore } from '../lib/store/gameStore';
-import type { ChatManager } from '../lib/realtime/ChatManager';
 import type { InputManager } from '../lib/game/InputManager';
 import styles from './ChatPanel.module.css';
 
+interface StoreChatManager {
+    sendMessage: (message: string) => Promise<void>;
+}
+
 interface Props {
-    chatManager: ChatManager | null;
+    chatManager: StoreChatManager | null;
     inputManager?: InputManager | null;
 }
 

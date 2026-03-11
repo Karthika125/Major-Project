@@ -9,6 +9,17 @@
     box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+    width: 100%;
+    height: 100%;
+}
+
+#root {
+    position: relative;
+}
+
 body {
     margin: 0;
     padding: 0;
@@ -19,7 +30,8 @@ body {
     -moz-osx-font-smoothing: grayscale;
     background-color: var(--bg-color);
     color: var(--text-color);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 .loading-screen {

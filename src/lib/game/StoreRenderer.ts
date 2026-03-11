@@ -3,20 +3,12 @@ import { SHELVES } from './Store';
 
 export class StoreRenderer {
     render(ctx: CanvasRenderingContext2D, camera: Vector2D): void {
-        // Dark background
         ctx.fillStyle = '#0a0a0f';
         ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-        // Draw floor
         this.renderFloor(ctx, camera);
-
-        // Draw shelves
         this.renderShelves(ctx, camera);
-
-        // Draw checkout counter
         this.renderCheckout(ctx, camera);
-
-        // Draw store boundaries
         this.renderBoundaries(ctx, camera);
     }
 
@@ -32,12 +24,10 @@ export class StoreRenderer {
                 const screenX = x - camera.x;
                 const screenY = y - camera.y;
 
-                // Dark checkerboard pattern
                 const isLight = (Math.floor(x / tileSize) + Math.floor(y / tileSize)) % 2 === 0;
                 ctx.fillStyle = isLight ? '#1a1a2e' : '#16161f';
                 ctx.fillRect(screenX, screenY, tileSize, tileSize);
 
-                // Subtle grid lines with neon glow
                 ctx.strokeStyle = 'rgba(139, 92, 246, 0.15)';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(screenX, screenY, tileSize, tileSize);
@@ -50,14 +40,12 @@ export class StoreRenderer {
             const screenX = shelf.x - camera.x;
             const screenY = shelf.y - camera.y;
 
-            // Neon glow shadow
             ctx.save();
             ctx.shadowColor = '#8b5cf6';
             ctx.shadowBlur = 20;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
 
-            // Shelf body with dark gradient
             const gradient = ctx.createLinearGradient(
                 screenX,
                 screenY,
@@ -69,14 +57,12 @@ export class StoreRenderer {
             ctx.fillStyle = gradient;
             ctx.fillRect(screenX, screenY, shelf.width, shelf.height);
 
-            // Neon border
             ctx.strokeStyle = '#8b5cf6';
             ctx.lineWidth = 2;
             ctx.strokeRect(screenX, screenY, shelf.width, shelf.height);
 
             ctx.restore();
 
-            // Shelf details (horizontal lines with glow)
             ctx.strokeStyle = 'rgba(139, 92, 246, 0.5)';
             ctx.lineWidth = 1;
             for (let i = 1; i < 3; i++) {
@@ -88,7 +74,6 @@ export class StoreRenderer {
             }
         });
 
-        // Draw section labels above shelves
         const sections = [
             { x: 175, y: 90, label: 'ELECTRONICS' },
             { x: 175, y: 230, label: 'CLOTHING' },
@@ -127,14 +112,12 @@ export class StoreRenderer {
         const screenX = CHECKOUT_AREA.x - camera.x;
         const screenY = CHECKOUT_AREA.y - camera.y;
 
-        // Neon glow effect
         ctx.save();
         ctx.shadowColor = '#10b981';
         ctx.shadowBlur = 30;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
 
-        // Checkout counter with gradient
         const gradient = ctx.createLinearGradient(
             screenX,
             screenY,
@@ -146,14 +129,12 @@ export class StoreRenderer {
         ctx.fillStyle = gradient;
         ctx.fillRect(screenX, screenY, CHECKOUT_AREA.width, CHECKOUT_AREA.height);
 
-        // Neon border
         ctx.strokeStyle = '#34d399';
         ctx.lineWidth = 3;
         ctx.strokeRect(screenX, screenY, CHECKOUT_AREA.width, CHECKOUT_AREA.height);
 
         ctx.restore();
 
-        // Checkout text with glow
         ctx.save();
         ctx.shadowColor = '#fff';
         ctx.shadowBlur = 10;
@@ -174,7 +155,6 @@ export class StoreRenderer {
         const screenX = 0 - camera.x;
         const screenY = 0 - camera.y;
 
-        // Outer neon glow
         ctx.save();
         ctx.shadowColor = '#8b5cf6';
         ctx.shadowBlur = 20;
@@ -183,7 +163,6 @@ export class StoreRenderer {
         ctx.strokeRect(screenX, screenY, STORE_WIDTH, STORE_HEIGHT);
         ctx.restore();
 
-        // Inner decorative border
         ctx.strokeStyle = '#a78bfa';
         ctx.lineWidth = 2;
         ctx.strokeRect(screenX + 10, screenY + 10, STORE_WIDTH - 20, STORE_HEIGHT - 20);

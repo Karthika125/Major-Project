@@ -1,88 +1,112 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth/AuthProvider';
+import { supabase } from '../lib/supabase/client';
+import { useGameStore } from '../lib/store/gameStore';
 import styles from './MallPage.module.css';
 
-interface Store {
+interface StoreCard {
     id: string;
     name: string;
     description: string;
-    theme: string;
     icon: string;
     gradient: string;
     category: string;
+    ownerId: string;
 }
 
-const STORES: Store[] = [
-    {
-        id: 'hm',
-        name: 'H&M',
-        description: 'Trendy fashion for everyone. Discover the latest styles in clothing and accessories.',
-        theme: 'modern-fashion',
-        icon: '👗',
-        gradient: 'linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%)',
-        category: 'Fashion'
-    },
-    {
-        id: 'lulu',
-        name: 'LULU Hypermarket',
-        description: 'Your one-stop shop for groceries, electronics, and household essentials.',
-        theme: 'supermarket',
-        icon: '🛒',
-        gradient: 'linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%)',
-        category: 'Grocery'
-    },
-    {
-        id: 'zara',
-        name: 'ZARA',
-        description: 'Premium fashion and elegant designs. Experience luxury shopping.',
-        theme: 'luxury-fashion',
-        icon: '👔',
-        gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        category: 'Fashion'
-    },
-    {
-        id: 'sephora',
-        name: 'Sephora',
-        description: 'Beauty and cosmetics paradise. Explore makeup, skincare, and fragrances.',
-        theme: 'beauty',
-        icon: '💄',
-        gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-        category: 'Beauty'
-    },
-    {
-        id: 'nike',
-        name: 'Nike Store',
-        description: 'Athletic wear and sports equipment. Just do it!',
-        theme: 'sports',
-        icon: '👟',
-        gradient: 'linear-gradient(135deg, #FA8BFF 0%, #2BD2FF 90%, #2BFF88 100%)',
-        category: 'Sports'
-    },
-    {
-        id: 'ikea',
-        name: 'IKEA',
-        description: 'Furniture and home accessories. Design your dream home.',
-        theme: 'furniture',
-        icon: '🛋️',
-        gradient: 'linear-gradient(135deg, #FEC163 0%, #DE4313 100%)',
-        category: 'Home'
-    }
+interface StoreRow {
+    id: string;
+    owner_id: string;
+    store_name: string;
+    description: string | null;
+}
+
+const STORE_ICONS = ['🏬', '🛍️', '👗', '🛒', '🎮', '👟', '💄', '🧢'];
+const STORE_GRADIENTS = [
+    'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    'linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%)',
+    'linear-gradient(135deg, #FEC163 0%, #DE4313 100%)',
+    'linear-gradient(135deg, #9EC6F3 0%, #7BA8D9 100%)',
+    'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    'linear-gradient(135deg, #FA8BFF 0%, #2BD2FF 90%, #2BFF88 100%)',
 ];
+
+const getSeed = (value: string, modulo: number): number => {
+    return value
+        .split('')
+        .reduce((acc, char) => (acc + char.charCodeAt(0)) % modulo, 0);
+};
+
+const mapStoreToCard = (store: StoreRow): StoreCard => {
+    const iconSeed = getSeed(store.id, STORE_ICONS.length);
+    const gradientSeed = getSeed(store.store_name || store.id, STORE_GRADIENTS.length);
+
+    return {
+        id: store.id,
+        name: store.store_name,
+        description: store.description || 'Step into this virtual store and explore products in 3D.',
+        icon: STORE_ICONS[iconSeed],
+        gradient: STORE_GRADIENTS[gradientSeed],
+        category: 'Store',
+        ownerId: store.owner_id,
+    };
+};
 
 export const MallPage: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
-    const [selectedCategory, setSelectedCategory] = useState<string>('All');
+    const setCurrentScene = useGameStore((state) => state.setCurrentScene);
+    const [stores, setStores] = useState<StoreCard[]>([]);
+    const [storesLoading, setStoresLoading] = useState(true);
+    const [storesError, setStoresError] = useState('');
 
-    const categories = ['All', ...Array.from(new Set(STORES.map(s => s.category)))];
+    useEffect(() => {
+        if (!user) {
+            return;
+        }
 
-    const filteredStores = selectedCategory === 'All'
-        ? STORES
-        : STORES.filter(s => s.category === selectedCategory);
+        const loadStores = async () => {
+            setStoresLoading(true);
+            setStoresError('');
+
+            try {
+                const db = supabase as any;
+                const { data, error } = await db
+                    .from('stores')
+                    .select('id, owner_id, store_name, description')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+
+                setStores((data || []).map(mapStoreToCard));
+            } catch (error: any) {
+                console.error('Failed to load stores:', error);
+                setStoresError(error?.message || 'Failed to load stores.');
+                setStores([]);
+            } finally {
+                setStoresLoading(false);
+            }
+        };
+
+        void loadStores();
+    }, [user]);
 
     const handleStoreClick = (storeId: string) => {
+        setCurrentScene('store');
         navigate(`/store/${storeId}`);
+    };
+
+    const handleCreateStore = () => {
+        navigate('/stores/create');
+    };
+
+    const handleManageStore = (id: string) => {
+        navigate(`/stores/${id}/dashboard`);
+    };
+
+    const handleProfile = () => {
+        navigate('/profile');
     };
 
     const handleLogout = async () => {
@@ -101,10 +125,16 @@ export const MallPage: React.FC = () => {
                 <div className={styles.headerContent}>
                     <div className={styles.logo}>
                         <span className={styles.logoIcon}>🏬</span>
-                        <h1>Virtual Shopping Mall</h1>
+                        <h1>Store Home</h1>
                     </div>
                     <div className={styles.userInfo}>
                         <span className={styles.welcome}>Welcome, {user.email?.split('@')[0]}!</span>
+                        <button className={styles.profileBtn} onClick={handleProfile}>
+                            My Profile
+                        </button>
+                        <button className={styles.createStoreBtn} onClick={handleCreateStore}>
+                            + Create Store
+                        </button>
                         <button className={styles.logoutBtn} onClick={handleLogout}>
                             Logout
                         </button>
@@ -116,59 +146,66 @@ export const MallPage: React.FC = () => {
             <section className={styles.hero}>
                 <div className={styles.heroContent}>
                     <h2 className={styles.heroTitle}>
-                        Explore Amazing Stores
+                        Available Stores
                     </h2>
                     <p className={styles.heroSubtitle}>
-                        Walk through virtual stores, interact with products, and shop with your avatar!
+                        Pick any store below and enter directly.
                     </p>
                 </div>
             </section>
 
-            {/* Category Filter */}
-            <div className={styles.filterSection}>
-                <div className={styles.filterContainer}>
-                    {categories.map(category => (
-                        <button
-                            key={category}
-                            className={`${styles.filterBtn} ${selectedCategory === category ? styles.filterBtnActive : ''}`}
-                            onClick={() => setSelectedCategory(category)}
-                        >
-                            {category}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
             {/* Store Grid */}
             <main className={styles.main}>
                 <div className={styles.storeGrid}>
-                    {filteredStores.map((store) => (
-                        <div
-                            key={store.id}
-                            className={styles.storeCard}
-                            onClick={() => handleStoreClick(store.id)}
-                            style={{ background: store.gradient }}
-                        >
-                            <div className={styles.storeCardContent}>
-                                <div className={styles.storeIcon}>{store.icon}</div>
-                                <h3 className={styles.storeName}>{store.name}</h3>
-                                <p className={styles.storeDescription}>{store.description}</p>
-                                <div className={styles.storeCategory}>
-                                    <span className={styles.categoryBadge}>{store.category}</span>
+                    {storesLoading ? (
+                        <div className={styles.statusMessage}>Loading stores...</div>
+                    ) : storesError ? (
+                        <div className={styles.statusMessage}>{storesError}</div>
+                    ) : stores.length === 0 ? (
+                        <div className={styles.statusMessage}>No stores available yet. Create your first store.</div>
+                    ) : (
+                        stores.map((store) => (
+                            <article key={store.id} className={styles.storeCard}>
+                                <div
+                                    className={styles.storeCardOverlay}
+                                    style={{
+                                        background: store.gradient,
+                                        opacity: 0.15,
+                                    }}
+                                />
+                                <div className={styles.storeCardContent}>
+                                    <div>
+                                        <div className={styles.storeIcon}>{store.icon}</div>
+                                        <h3 className={styles.storeName}>{store.name}</h3>
+                                        <p className={styles.storeDescription}>{store.description}</p>
+                                    </div>
+
+                                    <div className={styles.storeActions}>
+                                        <button
+                                            className={styles.enterBtn}
+                                            onClick={() => handleStoreClick(store.id)}
+                                        >
+                                            Enter Store
+                                        </button>
+                                        {user.id === store.ownerId && (
+                                            <button
+                                                className={styles.manageBtn}
+                                                onClick={() => handleManageStore(store.id)}
+                                            >
+                                                Manage Store
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
-                                <button className={styles.enterBtn}>
-                                    Enter Store →
-                                </button>
-                            </div>
-                            <div className={styles.storeCardOverlay}></div>
-                        </div>
-                    ))}
+                            </article>
+                        ))
+                    )}
                 </div>
             </main>
 
             {/* Footer */}
             <footer className={styles.footer}>
-                <p>© 2026 Virtual Shopping Mall - Experience the future of shopping</p>
+                <p>© 2026 Virtual Store - Choose a store and start shopping</p>
             </footer>
         </div>
     );

@@ -19,27 +19,70 @@ export const LoginPage: React.FC = () => {
 
         try {
             if (isSignUp) {
+                const trimmedUsername = username.trim();
+                if (!trimmedUsername) {
+                    throw new Error('Username is required');
+                }
+
                 // Sign up
                 const { data, error: signUpError } = await supabase.auth.signUp({
                     email,
                     password,
+                    options: {
+                        emailRedirectTo: `${window.location.origin}/`,
+                        data: {
+                            username: trimmedUsername,
+                        },
+                    },
                 });
 
                 if (signUpError) throw signUpError;
                 if (!data.user) throw new Error('No user returned');
 
-                // Create user profile
-                const { error: profileError } = await supabase
-                    .from('users')
-                    .insert({
-                        id: data.user.id,
-                        username,
-                        avatar_type: 'default',
-                    });
+                if (data.session) {
+                    // Create user profile for legacy schema compatibility.
+                    // Newer schema can auto-create profiles via auth trigger.
+                    const { error: usersProfileError } = await supabase
+                        .from('users')
+                        .upsert(
+                            {
+                                id: data.user.id,
+                                username: trimmedUsername,
+                                avatar_type: 'default',
+                            },
+                            { onConflict: 'id' }
+                        );
 
-                if (profileError) throw profileError;
+                    if (
+                        usersProfileError &&
+                        usersProfileError.code !== '23505' &&
+                        usersProfileError.code !== '42P01'
+                    ) {
+                        throw usersProfileError;
+                    }
 
-                navigate('/mall');
+                    const { error: publicProfileError } = await (supabase as any)
+                        .from('profiles')
+                        .upsert(
+                            {
+                                id: data.user.id,
+                                username: trimmedUsername,
+                            },
+                            { onConflict: 'id' }
+                        );
+
+                    if (
+                        publicProfileError &&
+                        publicProfileError.code !== '23505' &&
+                        publicProfileError.code !== '42P01'
+                    ) {
+                        throw publicProfileError;
+                    }
+
+                    navigate('/mall');
+                } else {
+                    setError('Signup successful. Please check your email to confirm your account.');
+                }
             } else {
                 // Sign in
                 const { error: signInError } = await supabase.auth.signInWithPassword({

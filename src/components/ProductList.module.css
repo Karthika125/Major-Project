@@ -1,0 +1,14 @@
+.emptyState {
+    border: 1px dashed rgba(158, 198, 243, 0.6);
+    border-radius: 12px;
+    color: #666;
+    background: rgba(255, 241, 213, 0.4);
+    padding: 22px;
+    text-align: center;
+}
+
+.productsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+}
