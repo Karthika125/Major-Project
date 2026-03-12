@@ -323,7 +323,7 @@ const ProductBox: React.FC<{
     );
 };
 
-// Enhanced Shelf with modern design
+// ── Realistic metal gondola shelf unit (retail standard) ────────────────────
 const Shelf: React.FC<{
     position: [number, number, number];
     rotation?: [number, number, number];
@@ -352,41 +352,88 @@ const Shelf: React.FC<{
     const visibleProducts = products.slice(0, maxProductsPerShelf);
     const shelfRows = Math.max(1, Math.ceil(maxProductsPerShelf / productsPerRow));
     const shelfWidth = Math.max(2.6, (productsPerRow - 1) * productSpacingX + 1.1);
-    const shelfHeight = Math.max(1.8, (shelfRows - 1) * productSpacingY + 0.8);
+    const totalHeight = shelfRows * productSpacingY + 0.25;
+    const shelfDepth = 0.62;
+    const uprightW = 0.055;
 
     return (
         <group position={position} rotation={rotation}>
-            {/* Modern shelf design */}
-            {Array.from({ length: shelfRows }, (_, idx) => idx * productSpacingY).map((y, idx) => (
-                <group key={idx}>
-                    <RoundedBox args={[shelfWidth, 0.06, 0.65]} radius={0.02} position={[0, y, 0]}>
-                        <meshStandardMaterial color="#6D4C41" roughness={0.6} metalness={0.2} />
-                    </RoundedBox>
-                </group>
+            {/* ── Vertical steel upright posts (left & right) ── */}
+            {([-shelfWidth / 2 - uprightW / 2, shelfWidth / 2 + uprightW / 2] as number[]).map((xPos, i) => (
+                <mesh key={i} position={[xPos, totalHeight / 2, 0]} castShadow>
+                    <boxGeometry args={[uprightW, totalHeight + 0.08, uprightW * 1.3]} />
+                    <meshStandardMaterial color="#888888" roughness={0.2} metalness={0.85} />
+                </mesh>
             ))}
 
-            {/* Back panel with gradient effect */}
-            <mesh position={[0, shelfHeight / 2, -0.32]}>
-                <planeGeometry args={[shelfWidth, shelfHeight + 0.9]} />
-                <meshStandardMaterial color="#F5F5DC" roughness={0.8} />
+            {/* ── Solid steel back panel ── */}
+            <mesh position={[0, totalHeight / 2, -shelfDepth / 2 + 0.01]} receiveShadow>
+                <boxGeometry args={[shelfWidth, totalHeight, 0.022]} />
+                <meshStandardMaterial color="#B0B0B0" roughness={0.55} metalness={0.65} />
             </mesh>
 
-            {/* Shelf lighting */}
-            <pointLight position={[0, shelfHeight + 0.7, 0.3]} intensity={0.3} color="#FFFFFF" distance={3} />
+            {/* ── Shelf boards + front price-rail strips ── */}
+            {Array.from({ length: shelfRows + 1 }, (_, i) => {
+                const yPos = i * productSpacingY;
+                return (
+                    <group key={i}>
+                        {/* Powder-coated steel shelf board */}
+                        <mesh position={[0, yPos, 0]} castShadow receiveShadow>
+                            <boxGeometry args={[shelfWidth + uprightW * 2, 0.038, shelfDepth]} />
+                            <meshStandardMaterial color="#C8C8C8" roughness={0.18} metalness={0.78} />
+                        </mesh>
+                        {/* Front lip / price-label channel */}
+                        <mesh position={[0, yPos + 0.048, shelfDepth / 2 - 0.004]}>
+                            <boxGeometry args={[shelfWidth + uprightW * 2, 0.072, 0.007]} />
+                            <meshStandardMaterial color="#E8E8E8" roughness={0.08} metalness={0.95} />
+                        </mesh>
+                        {/* White price-tag card in the rail */}
+                        <mesh position={[0, yPos + 0.046, shelfDepth / 2 + 0.002]}>
+                            <boxGeometry args={[shelfWidth - 0.1, 0.055, 0.001]} />
+                            <meshStandardMaterial color="#FAFAFA" roughness={0.9} metalness={0} />
+                        </mesh>
+                    </group>
+                );
+            })}
 
-            {/* Products */}
+            {/* ── Top cap rail ── */}
+            <mesh position={[0, totalHeight + 0.04, 0]}>
+                <boxGeometry args={[shelfWidth + uprightW * 4, 0.052, shelfDepth + 0.02]} />
+                <meshStandardMaterial color="#888888" roughness={0.2} metalness={0.85} />
+            </mesh>
+
+            {/* ── Aisle number sign clipped to top ── */}
+            <group position={[0, totalHeight + 0.22, 0]}>
+                <mesh>
+                    <boxGeometry args={[1.1, 0.32, 0.04]} />
+                    <meshStandardMaterial color="#1A237E" roughness={0.4} metalness={0.3} />
+                </mesh>
+            </group>
+
+            {/* ── Under-shelf warm LED strips ── */}
+            {Array.from({ length: shelfRows }, (_, i) => (
+                <pointLight
+                    key={`ul-${i}`}
+                    position={[0, (i + 1) * productSpacingY - 0.12, 0.2]}
+                    intensity={0.18}
+                    color="#FFF5E0"
+                    distance={2.8}
+                    decay={2}
+                />
+            ))}
+
+            {/* ── Products ── */}
             {visibleProducts.map((product, idx) => {
                 const row = Math.floor(idx / productsPerRow);
                 const col = idx % productsPerRow;
                 const startX = -((productsPerRow - 1) * productSpacingX) / 2;
                 const x = startX + col * productSpacingX;
                 const y = row * productSpacingY + 0.5;
-
                 return (
                     <ProductBox
                         key={product.id}
                         product={product}
-                        position={[x, y, 0.25]}
+                        position={[x, y, 0.08]}
                         onClick={() => onProductClick(product)}
                         onMeshMount={onProductMeshMount}
                         isNear={nearbyProductIds?.has(String(product.id)) ?? false}
@@ -507,6 +554,484 @@ const PlayerController: React.FC<{
     });
 
     return null;
+};
+
+// ── Realistic polished marble chess-tile floor ──────────────────────────────
+const FloorTiles: React.FC = () => {
+    const texture = useMemo(() => {
+        const size = 1024;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+
+        const tiles = 2; // 2×2 per canvas (one alternating pair per axis)
+        const tileSize = size / tiles;
+        const grout = 3; // narrow grout line in px
+
+        // Dark charcoal grout
+        ctx.fillStyle = '#3A3630';
+        ctx.fillRect(0, 0, size, size);
+
+        const drawMarbleVeins = (
+            x: number, y: number, w: number, h: number,
+            baseColor: string, veinColor: string, count: number
+        ) => {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, w, h);
+            ctx.clip();
+            ctx.fillStyle = baseColor;
+            ctx.fillRect(x, y, w, h);
+
+            // Marble veining
+            for (let v = 0; v < count; v++) {
+                ctx.beginPath();
+                const sx = x + Math.random() * w;
+                const sy = y + Math.random() * h * 0.3;
+                ctx.moveTo(sx, sy);
+                ctx.bezierCurveTo(
+                    sx + (Math.random() - 0.5) * 80, sy + h * 0.25,
+                    sx + (Math.random() - 0.5) * 80, sy + h * 0.6,
+                    sx + (Math.random() - 0.5) * 50, sy + h
+                );
+                ctx.strokeStyle = veinColor;
+                ctx.lineWidth = 0.5 + Math.random() * 1.2;
+                ctx.globalAlpha = 0.12 + Math.random() * 0.18;
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        };
+
+        for (let row = 0; row < tiles; row++) {
+            for (let col = 0; col < tiles; col++) {
+                const x = col * tileSize + grout;
+                const y = row * tileSize + grout;
+                const w = tileSize - grout * 2;
+                const h = tileSize - grout * 2;
+                const isWhite = (row + col) % 2 === 0;
+
+                if (isWhite) {
+                    // Carrara white marble
+                    const grad = ctx.createLinearGradient(x, y, x + w, y + h);
+                    grad.addColorStop(0, '#F5F1EB');
+                    grad.addColorStop(0.45, '#EDE8E1');
+                    grad.addColorStop(1, '#E3DED6');
+                    drawMarbleVeins(x, y, w, h, '#EDE8E1', 'rgba(160,150,140,1)', 6);
+                    ctx.fillStyle = grad;
+                    ctx.globalAlpha = 0.5;
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalAlpha = 1;
+                    // Polished top-left highlight
+                    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y + h * 0.6);
+                    ctx.lineTo(x, y);
+                    ctx.lineTo(x + w * 0.6, y);
+                    ctx.stroke();
+                } else {
+                    // Nero Marquina black marble
+                    const grad = ctx.createLinearGradient(x, y, x + w, y + h);
+                    grad.addColorStop(0, '#1C1C1C');
+                    grad.addColorStop(0.5, '#141414');
+                    grad.addColorStop(1, '#0D0D0D');
+                    drawMarbleVeins(x, y, w, h, '#141414', 'rgba(200,195,190,1)', 5);
+                    ctx.fillStyle = grad;
+                    ctx.globalAlpha = 0.55;
+                    ctx.fillRect(x, y, w, h);
+                    ctx.globalAlpha = 1;
+                    // Subtle white vein highlights
+                    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y + h * 0.7);
+                    ctx.lineTo(x, y);
+                    ctx.lineTo(x + w * 0.5, y);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(10, 10);
+        tex.anisotropy = 16;
+        return tex;
+    }, []);
+
+    return (
+        <>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+                <planeGeometry args={[40, 40]} />
+                <meshStandardMaterial map={texture} roughness={0.08} metalness={0.15} />
+            </mesh>
+            {/* Very faint reflection plane to sell the polish */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.003, 0]}>
+                <planeGeometry args={[40, 40]} />
+                <meshStandardMaterial
+                    color="#ffffff"
+                    transparent
+                    opacity={0.04}
+                    roughness={0}
+                    metalness={1}
+                />
+            </mesh>
+        </>
+    );
+};
+
+const CEILING_HEIGHT = 7;
+
+// ── Front wall: large storefront windows + glass double-door ────────────────
+const FrontWallWithWindows: React.FC<{ accentColor: string; storeName: string }> = ({ accentColor, storeName }) => {
+    const z = 19.85;
+    const wallColor = '#F4F0EC';
+    const frameColor = '#C0C0C0';
+    const glassColor = '#A8CEE8';
+
+    return (
+        <group>
+            {/* ── Fake outdoor sky behind the glass ── */}
+            <mesh position={[0, 4.5, 22.8]}>
+                <planeGeometry args={[52, 10]} />
+                <meshBasicMaterial color="#6EB5E8" />
+            </mesh>
+            <mesh position={[0, 0.8, 22.8]}>
+                <planeGeometry args={[52, 4]} />
+                <meshBasicMaterial color="#A8C8D8" />
+            </mesh>
+            {/* Cityscape silhouette suggestion */}
+            {([ [-16,3.2,4,7], [-10,2.5,3,6.5], [8,2.8,5,5.5], [15,2.2,4,6] ] as number[][]).map(([x,y,w,h], i) => (
+                <mesh key={i} position={[x, y, 22.4]}>
+                    <boxGeometry args={[w, h, 0.1]} />
+                    <meshBasicMaterial color="#7A8FA0" />
+                </mesh>
+            ))}
+
+            {/* ── Solid wall panels assembled around the openings ── */}
+            {/* Top band: full width, y=3.3→7 */}
+            <mesh position={[0, 5.15, z]} receiveShadow>
+                <boxGeometry args={[40, 3.7, 0.3]} />
+                <meshStandardMaterial color={wallColor} roughness={0.88} metalness={0} />
+            </mesh>
+            {/* Bottom sill left of door: x=-20 to x=-3 */}
+            <mesh position={[-11.5, 0.5, z]}>
+                <boxGeometry args={[17, 1.0, 0.3]} />
+                <meshStandardMaterial color={wallColor} roughness={0.88} metalness={0} />
+            </mesh>
+            {/* Bottom sill right of door: x=+3 to x=+20 */}
+            <mesh position={[11.5, 0.5, z]}>
+                <boxGeometry args={[17, 1.0, 0.3]} />
+                <meshStandardMaterial color={wallColor} roughness={0.88} metalness={0} />
+            </mesh>
+            {/* Left extreme pillar: x=-20 to x=-14, mid-height */}
+            <mesh position={[-17, 2.15, z]}>
+                <boxGeometry args={[6, 2.3, 0.3]} />
+                <meshStandardMaterial color={wallColor} roughness={0.88} metalness={0} />
+            </mesh>
+            {/* Right extreme pillar: x=+14 to x=+20 */}
+            <mesh position={[17, 2.15, z]}>
+                <boxGeometry args={[6, 2.3, 0.3]} />
+                <meshStandardMaterial color={wallColor} roughness={0.88} metalness={0} />
+            </mesh>
+            {/* Left door-side pillar: x=-6 to x=-3 */}
+            <mesh position={[-4.5, 2.15, z]}>
+                <boxGeometry args={[3, 2.3, 0.3]} />
+                <meshStandardMaterial color={wallColor} roughness={0.88} metalness={0} />
+            </mesh>
+            {/* Right door-side pillar: x=+3 to x=+6 */}
+            <mesh position={[4.5, 2.15, z]}>
+                <boxGeometry args={[3, 2.3, 0.3]} />
+                <meshStandardMaterial color={wallColor} roughness={0.88} metalness={0} />
+            </mesh>
+
+            {/* ── Left large storefront window: x=-14 to x=-6, y=1.0 to y=3.3 ── */}
+            <mesh position={[-10, 2.15, z + 0.05]}>
+                <boxGeometry args={[8, 2.3, 0.06]} />
+                <meshStandardMaterial color={glassColor} transparent opacity={0.3} roughness={0.01} metalness={0.12} />
+            </mesh>
+            {([
+                [[-10, 3.33, z+0.06], [8.2, 0.1, 0.14]],
+                [[-10, 1.02, z+0.06], [8.2, 0.1, 0.14]],
+                [[-14.12, 2.15, z+0.06], [0.1, 2.42, 0.14]],
+                [[-5.88, 2.15, z+0.06], [0.1, 2.42, 0.14]],
+                [[-10, 2.15, z+0.06], [0.07, 2.3, 0.1]],
+            ] as [[number,number,number],[number,number,number]][]).map(([p,s],i) => (
+                <mesh key={i} position={p}>
+                    <boxGeometry args={s} />
+                    <meshStandardMaterial color={frameColor} roughness={0.1} metalness={0.9} />
+                </mesh>
+            ))}
+
+            {/* ── Right large storefront window: x=+6 to x=+14 ── */}
+            <mesh position={[10, 2.15, z + 0.05]}>
+                <boxGeometry args={[8, 2.3, 0.06]} />
+                <meshStandardMaterial color={glassColor} transparent opacity={0.3} roughness={0.01} metalness={0.12} />
+            </mesh>
+            {([
+                [[10, 3.33, z+0.06], [8.2, 0.1, 0.14]],
+                [[10, 1.02, z+0.06], [8.2, 0.1, 0.14]],
+                [[5.88, 2.15, z+0.06], [0.1, 2.42, 0.14]],
+                [[14.12, 2.15, z+0.06], [0.1, 2.42, 0.14]],
+                [[10, 2.15, z+0.06], [0.07, 2.3, 0.1]],
+            ] as [[number,number,number],[number,number,number]][]).map(([p,s],i) => (
+                <mesh key={i} position={p}>
+                    <boxGeometry args={s} />
+                    <meshStandardMaterial color={frameColor} roughness={0.1} metalness={0.9} />
+                </mesh>
+            ))}
+
+            {/* ── Central double glass door: x=-3 to x=+3, y=0 to y=3.1 ── */}
+            <mesh position={[-1.48, 1.55, z + 0.08]}>
+                <boxGeometry args={[2.86, 3.1, 0.05]} />
+                <meshStandardMaterial color={glassColor} transparent opacity={0.22} roughness={0.01} metalness={0.15} />
+            </mesh>
+            <mesh position={[1.48, 1.55, z + 0.08]}>
+                <boxGeometry args={[2.86, 3.1, 0.05]} />
+                <meshStandardMaterial color={glassColor} transparent opacity={0.22} roughness={0.01} metalness={0.15} />
+            </mesh>
+            {/* Door frame */}
+            {([
+                [[0, 3.18, z+0.06], [6.2, 0.14, 0.14]],
+                [[-3.07, 1.55, z+0.06], [0.14, 3.26, 0.14]],
+                [[3.07, 1.55, z+0.06], [0.14, 3.26, 0.14]],
+                [[0, 1.55, z+0.06], [0.1, 3.1, 0.1]],
+            ] as [[number,number,number],[number,number,number]][]).map(([p,s],i) => (
+                <mesh key={i} position={p}>
+                    <boxGeometry args={s} />
+                    <meshStandardMaterial color={frameColor} roughness={0.1} metalness={0.9} />
+                </mesh>
+            ))}
+            {/* Door handles */}
+            <mesh position={[-0.45, 1.55, z + 0.13]}>
+                <boxGeometry args={[0.48, 0.04, 0.04]} />
+                <meshStandardMaterial color="#888888" roughness={0.06} metalness={0.97} />
+            </mesh>
+            <mesh position={[0.45, 1.55, z + 0.13]}>
+                <boxGeometry args={[0.48, 0.04, 0.04]} />
+                <meshStandardMaterial color="#888888" roughness={0.06} metalness={0.97} />
+            </mesh>
+
+            {/* ── Welcome mat ── */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 18.3]}>
+                <planeGeometry args={[5.5, 1.6]} />
+                <meshStandardMaterial color="#1A1A1A" roughness={0.96} metalness={0} />
+            </mesh>
+            <Text position={[0, 0.007, 18.3]} rotation={[-Math.PI / 2, 0, 0]}
+                fontSize={0.2} color="#BBBBBB" anchorX="center" anchorY="middle" fontWeight="bold">
+                WELCOME
+            </Text>
+
+            {/* ── Coloured fascia above front wall ── */}
+            <mesh position={[0, 6.25, z + 0.18]}>
+                <boxGeometry args={[40, 0.9, 0.1]} />
+                <meshStandardMaterial color={accentColor} roughness={0.3} metalness={0.45}
+                    emissive={accentColor} emissiveIntensity={0.45} />
+            </mesh>
+            <Text position={[0, 6.25, z + 0.26]} fontSize={0.3} color="#FFFFFF"
+                anchorX="center" anchorY="middle" fontWeight="bold">
+                {storeName.toUpperCase()}  •  EST. 2024  •  WELCOME
+            </Text>
+
+            {/* OPEN sign in window */}
+            <mesh position={[-10, 2.1, z + 0.12]}>
+                <boxGeometry args={[0.8, 0.4, 0.04]} />
+                <meshStandardMaterial color="#E53935" roughness={0.3} emissive="#E53935" emissiveIntensity={0.5} />
+            </mesh>
+            <Text position={[-10, 2.1, z + 0.15]} fontSize={0.2} color="#FFFFFF" anchorX="center" anchorY="middle" fontWeight="bold">
+                OPEN
+            </Text>
+
+            {/* Natural light streaming through windows */}
+            <pointLight position={[-10, 2.5, 17]} intensity={1.0} color="#D8EDFF" distance={16} decay={2} />
+            <pointLight position={[10, 2.5, 17]} intensity={1.0} color="#D8EDFF" distance={16} decay={2} />
+            <pointLight position={[0, 3.5, 18]} intensity={0.6} color="#FFF8F2" distance={12} decay={2} />
+        </group>
+    );
+};
+
+// ── Colorful hanging promotional banners ────────────────────────────────────
+const HangingBanners: React.FC = () => {
+    const banners: { pos: [number,number,number]; color: string; text: string }[] = [
+        { pos: [-14, 5.0, -5],  color: '#E53935', text: '🔥 SALE\nUP TO 50% OFF' },
+        { pos: [14,  5.0, -5],  color: '#1E88E5', text: '✨ NEW\nARRIVALS'        },
+        { pos: [-14, 5.0,  4],  color: '#43A047', text: '🛒 BUY 2\nGET 1 FREE'   },
+        { pos: [14,  5.0,  4],  color: '#FB8C00', text: '⭐ TOP\nPICKS'          },
+        { pos: [0,   5.0, -10], color: '#8E24AA', text: '💜 MEMBERS\nSPECIAL'    },
+        { pos: [0,   5.0,  13], color: '#00897B', text: '🎁 GIFT\nIDEAS'         },
+    ];
+
+    return (
+        <>
+            {banners.map((b, i) => (
+                <group key={i} position={b.pos}>
+                    {/* Suspension wire */}
+                    <mesh position={[0, 1.1, 0]}>
+                        <cylinderGeometry args={[0.007, 0.007, 2.2, 6]} />
+                        <meshStandardMaterial color="#BBBBBB" roughness={0.15} metalness={0.92} />
+                    </mesh>
+                    {/* Banner body */}
+                    <mesh>
+                        <boxGeometry args={[1.5, 1.9, 0.04]} />
+                        <meshStandardMaterial color={b.color} roughness={0.45} metalness={0}
+                            emissive={b.color} emissiveIntensity={0.12} />
+                    </mesh>
+                    {/* Bottom dark strip */}
+                    <mesh position={[0, -0.98, 0.026]}>
+                        <boxGeometry args={[1.5, 0.13, 0.008]} />
+                        <meshStandardMaterial color="#00000066" transparent opacity={0.3} />
+                    </mesh>
+                    <Text position={[0, 0.12, 0.03]} fontSize={0.23} color="#FFFFFF"
+                        anchorX="center" anchorY="middle" fontWeight="bold"
+                        maxWidth={1.3} textAlign="center" lineHeight={1.35}>
+                        {b.text}
+                    </Text>
+                </group>
+            ))}
+        </>
+    );
+};
+
+// ── Beautiful coffered ceiling with LED strips + chandelier ─────────────────
+const Ceiling: React.FC<{ accentColor: string }> = ({ accentColor }) => {
+    // Beam grid: lines at these positions create coffer cells between them
+    const beamX = [-16, -8, 0, 8, 16];
+    const beamZ = [-16, -8, 0, 8, 16];
+    const beamDrop = 0.32;
+    const beamW = 0.32;
+
+    // One spotlight per coffer cell (cells between beams + edges)
+    const spotPositions = useMemo<[number,number,number][]>(() => {
+        const pts: [number,number,number][] = [];
+        for (const x of [-14, -4, 4, 14]) {
+            for (const z of [-14, -4, 4, 14]) {
+                pts.push([x, CEILING_HEIGHT - 0.07, z]);
+            }
+        }
+        return pts;
+    }, []);
+
+    const ledColors = [accentColor, '#FFD700', '#FF7043', '#4FC3F7', '#81C784', '#CE93D8'];
+
+    return (
+        <>
+            {/* ── Main ceiling plaster surface ── */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, CEILING_HEIGHT, 0]}>
+                <planeGeometry args={[40, 40]} />
+                <meshStandardMaterial color="#F9F7F4" roughness={0.9} metalness={0} />
+            </mesh>
+
+            {/* ── Coffer beams spanning the Z depth (positioned along X) ── */}
+            {beamX.map((xPos, i) => (
+                <group key={`bx-${i}`}>
+                    <mesh position={[xPos, CEILING_HEIGHT - beamDrop / 2, 0]}>
+                        <boxGeometry args={[beamW, beamDrop, 40]} />
+                        <meshStandardMaterial color="#FAFAF8" roughness={0.65} metalness={0} />
+                    </mesh>
+                    {/* LED strip on underside — one color per beam */}
+                    <mesh position={[xPos, CEILING_HEIGHT - beamDrop - 0.01, 0]}>
+                        <boxGeometry args={[beamW - 0.05, 0.04, 39.6]} />
+                        <meshStandardMaterial
+                            color={ledColors[i % ledColors.length]}
+                            emissive={ledColors[i % ledColors.length]}
+                            emissiveIntensity={1.8} roughness={0} />
+                    </mesh>
+                    {/* Glow fill lights — 3 spaced along the strip */}
+                    {[-13, 0, 13].map((z, j) => (
+                        <pointLight key={j} position={[xPos, CEILING_HEIGHT - beamDrop - 0.25, z]}
+                            intensity={0.22} color={ledColors[i % ledColors.length]} distance={10} decay={2} />
+                    ))}
+                </group>
+            ))}
+
+            {/* ── Coffer beams spanning the X width (positioned along Z) ── */}
+            {beamZ.map((zPos, i) => (
+                <group key={`bz-${i}`}>
+                    <mesh position={[0, CEILING_HEIGHT - beamDrop / 2, zPos]}>
+                        <boxGeometry args={[40, beamDrop, beamW]} />
+                        <meshStandardMaterial color="#FAFAF8" roughness={0.65} metalness={0} />
+                    </mesh>
+                    <mesh position={[0, CEILING_HEIGHT - beamDrop - 0.01, zPos]}>
+                        <boxGeometry args={[39.6, 0.04, beamW - 0.05]} />
+                        <meshStandardMaterial
+                            color={ledColors[(i + 3) % ledColors.length]}
+                            emissive={ledColors[(i + 3) % ledColors.length]}
+                            emissiveIntensity={1.8} roughness={0} />
+                    </mesh>
+                    {[-13, 0, 13].map((x, j) => (
+                        <pointLight key={j} position={[x, CEILING_HEIGHT - beamDrop - 0.25, zPos]}
+                            intensity={0.2} color={ledColors[(i + 3) % ledColors.length]} distance={10} decay={2} />
+                    ))}
+                </group>
+            ))}
+
+            {/* ── Four-wall crown moulding ── */}
+            {([
+                [[0,  CEILING_HEIGHT-0.15, -20], [40.4, 0.3, 0.3]],
+                [[0,  CEILING_HEIGHT-0.15,  20], [40.4, 0.3, 0.3]],
+                [[-20,CEILING_HEIGHT-0.15,   0], [0.3,  0.3, 40.4]],
+                [[20, CEILING_HEIGHT-0.15,   0], [0.3,  0.3, 40.4]],
+            ] as [[number,number,number],[number,number,number]][]).map(([p,s],i) => (
+                <mesh key={i} position={p}>
+                    <boxGeometry args={s} />
+                    <meshStandardMaterial color="#FFFFFF" roughness={0.3} metalness={0.05} />
+                </mesh>
+            ))}
+
+            {/* ── Perimeter accent glow strips (all 4 walls, near ceiling) ── */}
+            {([
+                [[0,  CEILING_HEIGHT-0.045, -19.72], [39,  0.09, 0.2]],
+                [[0,  CEILING_HEIGHT-0.045,  19.72], [39,  0.09, 0.2]],
+                [[-19.72, CEILING_HEIGHT-0.045, 0],  [0.2, 0.09, 39]],
+                [[19.72,  CEILING_HEIGHT-0.045, 0],  [0.2, 0.09, 39]],
+            ] as [[number,number,number],[number,number,number]][]).map(([p,s],i) => (
+                <mesh key={i} position={p}>
+                    <boxGeometry args={s} />
+                    <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={1.6} roughness={0.05} />
+                </mesh>
+            ))}
+
+            {/* ── Recessed spotlights (one per coffer) ── */}
+            {spotPositions.map(([x,y,z],i) => (
+                <group key={i} position={[x, y, z]}>
+                    <mesh>
+                        <cylinderGeometry args={[0.2, 0.16, 0.1, 16]} />
+                        <meshStandardMaterial color="#A0A0A0" roughness={0.18} metalness={0.88} />
+                    </mesh>
+                    <mesh position={[0, -0.056, 0]}>
+                        <cylinderGeometry args={[0.14, 0.14, 0.008, 16]} />
+                        <meshStandardMaterial color="#FFFDE0" emissive="#FFFDE0" emissiveIntensity={4} roughness={0} />
+                    </mesh>
+                    <pointLight position={[0, -0.45, 0]} intensity={0.65} color="#FFF6E0" distance={8} decay={2} />
+                </group>
+            ))}
+
+            {/* ── Central chandelier / feature medallion ── */}
+            <group position={[0, CEILING_HEIGHT - 0.06, 0]}>
+                {/* Chrome disc */}
+                <mesh>
+                    <cylinderGeometry args={[1.5, 1.5, 0.09, 40]} />
+                    <meshStandardMaterial color="#D8D0C0" roughness={0.08} metalness={0.85} />
+                </mesh>
+                {/* Outer warm-white ring */}
+                <mesh position={[0, -0.07, 0]}>
+                    <torusGeometry args={[1.2, 0.06, 12, 52]} />
+                    <meshStandardMaterial color="#FFFDE7" emissive="#FFFDE7" emissiveIntensity={3.5} roughness={0} />
+                </mesh>
+                {/* Inner accent-color ring */}
+                <mesh position={[0, -0.07, 0]}>
+                    <torusGeometry args={[0.72, 0.045, 12, 52]} />
+                    <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={3.5} roughness={0} />
+                </mesh>
+                {/* Central strong downlight */}
+                <pointLight position={[0, -0.6, 0]} intensity={1.4} color="#FFF8E8" distance={14} decay={1.5} />
+                <pointLight position={[0, -0.6, 0]} intensity={0.6} color={accentColor} distance={9} decay={2} />
+            </group>
+        </>
+    );
 };
 
 // Main Store Component
@@ -738,92 +1263,204 @@ export const Store3D: React.FC<Store3DProps> = ({
 
     return (
         <>
-            {/* Enhanced Lighting */}
-            <ambientLight intensity={0.5} />
-            <directionalLight position={[10, 20, 10]} intensity={0.8} castShadow />
-            <pointLight position={[0, 4, 0]} intensity={0.4} color="#FFF8E1" />
-            <hemisphereLight args={['#87CEEB', '#F5F5DC', 0.3]} />
+            {/* ── Warm retail lighting ── */}
+            <ambientLight intensity={0.22} />
+            <directionalLight position={[4, 10, 5]} intensity={0.18} castShadow />
+            <hemisphereLight args={['#D6E8F7', '#F5EFE0', 0.15]} />
 
-            {/* Premium Floor with pattern */}
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-                <planeGeometry args={[40, 40]} />
-                <meshStandardMaterial 
-                    color="#FAFAFA" 
-                    roughness={0.8}
-                    metalness={0.1}
-                />
+            {/* Retail-style tiled floor */}
+            <FloorTiles />
+
+            {/* Beautiful coffered ceiling */}
+            <Ceiling accentColor={storeTheme.accentColor} />
+
+            {/* Colorful hanging banners */}
+            <HangingBanners />
+
+            {/* Front wall with windows and door */}
+            <FrontWallWithWindows accentColor={storeTheme.accentColor} storeName={storeTheme.name} />
+
+            {/* ── Walls ── */}
+            {/* Back wall — feature wall in deep rich colour */}
+            <mesh position={[0, 3.5, -20]} receiveShadow>
+                <boxGeometry args={[40, 7, 0.3]} />
+                <meshStandardMaterial color="#2C2A28" roughness={0.75} metalness={0.05} />
+            </mesh>
+            {/* Back wall lower accent panel */}
+            <mesh position={[0, 0.85, -19.84]}>
+                <boxGeometry args={[40, 1.7, 0.05]} />
+                <meshStandardMaterial color={storeTheme.accentColor} roughness={0.45} metalness={0.15}
+                    emissive={storeTheme.accentColor} emissiveIntensity={0.08} />
             </mesh>
 
-            {/* Floor grid pattern */}
-            <gridHelper args={[40, 40, '#E0E0E0', '#F5F5F5']} position={[0, 0.01, 0]} />
-
-            {/* Modern Walls */}
-            <RoundedBox args={[40, 7, 0.4]} radius={0.1} position={[0, 3.5, -20]}>
-                <meshStandardMaterial color="#ECEFF1" roughness={0.7} />
-            </RoundedBox>
-            <RoundedBox args={[0.4, 7, 40]} radius={0.1} position={[-20, 3.5, 0]}>
-                <meshStandardMaterial color="#ECEFF1" roughness={0.7} />
-            </RoundedBox>
-            <RoundedBox args={[0.4, 7, 40]} radius={0.1} position={[20, 3.5, 0]}>
-                <meshStandardMaterial color="#ECEFF1" roughness={0.7} />
-            </RoundedBox>
-
-            {/* Store Name Sign */}
-            <group position={[0, 5, -19.5]}>
-                <mesh>
-                    <planeGeometry args={[8, 1.2]} />
-                    <meshBasicMaterial color={storeTheme.accentColor} />
+            {/* Left wall — warm cream with coloured accent strips */}
+            <mesh position={[-20, 3.5, 0]} receiveShadow>
+                <boxGeometry args={[0.3, 7, 40]} />
+                <meshStandardMaterial color="#F0EBE3" roughness={0.88} metalness={0} />
+            </mesh>
+            {/* Left wall dado */}
+            <mesh position={[-19.84, 0.55, 0]}>
+                <boxGeometry args={[0.05, 1.1, 40]} />
+                <meshStandardMaterial color="#D8D0C4" roughness={0.85} metalness={0} />
+            </mesh>
+            {/* Left wall colour accent panels at intervals */}
+            {[-14, -4, 6, 16].map((z, i) => (
+                <mesh key={i} position={[-19.82, 2.8, z]}>
+                    <boxGeometry args={[0.04, 2.4, 1.8]} />
+                    <meshStandardMaterial
+                        color={['#E57373','#FFB74D','#81C784','#64B5F6'][i]}
+                        roughness={0.5} metalness={0.1}
+                        emissive={['#E57373','#FFB74D','#81C784','#64B5F6'][i]}
+                        emissiveIntensity={0.06}
+                    />
                 </mesh>
-                <Text
-                    position={[0, 0, 0.1]}
-                    fontSize={0.5}
-                    color="#FFFFFF"
-                    anchorX="center"
-                    anchorY="middle"
-                    fontWeight="bold"
-                >
+            ))}
+
+            {/* Right wall — same warm cream with different accent colours */}
+            <mesh position={[20, 3.5, 0]} receiveShadow>
+                <boxGeometry args={[0.3, 7, 40]} />
+                <meshStandardMaterial color="#F0EBE3" roughness={0.88} metalness={0} />
+            </mesh>
+            <mesh position={[19.84, 0.55, 0]}>
+                <boxGeometry args={[0.05, 1.1, 40]} />
+                <meshStandardMaterial color="#D8D0C4" roughness={0.85} metalness={0} />
+            </mesh>
+            {[-14, -4, 6, 16].map((z, i) => (
+                <mesh key={i} position={[19.82, 2.8, z]}>
+                    <boxGeometry args={[0.04, 2.4, 1.8]} />
+                    <meshStandardMaterial
+                        color={['#F48FB1','#CE93D8','#80DEEA','#A5D6A7'][i]}
+                        roughness={0.5} metalness={0.1}
+                        emissive={['#F48FB1','#CE93D8','#80DEEA','#A5D6A7'][i]}
+                        emissiveIntensity={0.06}
+                    />
+                </mesh>
+            ))}
+
+            {/* ── Baseboard skirting all walls ── */}
+            {([
+                [[0,    0.055, -19.86], [40, 0.11, 0.06]],
+                [[0,    0.055,  19.86], [40, 0.11, 0.06]],
+                [[-19.86, 0.055, 0],   [0.06, 0.11, 40]],
+                [[19.86,  0.055, 0],   [0.06, 0.11, 40]],
+            ] as [[number,number,number],[number,number,number]][]).map(([p,s],i) => (
+                <mesh key={i} position={p}>
+                    <boxGeometry args={s} />
+                    <meshStandardMaterial color="#888080" roughness={0.5} metalness={0.15} />
+                </mesh>
+            ))}
+
+            {/* ── Store Name Sign on back feature wall ── */}
+            <group position={[0, 5.5, -19.6]}>
+                <mesh>
+                    <boxGeometry args={[10, 1.15, 0.14]} />
+                    <meshStandardMaterial color="#111111" roughness={0.25} metalness={0.65} />
+                </mesh>
+                <mesh position={[0, -0.64, 0.05]}>
+                    <boxGeometry args={[10, 0.07, 0.09]} />
+                    <meshStandardMaterial color={storeTheme.accentColor} emissive={storeTheme.accentColor} emissiveIntensity={2.2} roughness={0.05} />
+                </mesh>
+                <Text position={[0, 0, 0.09]} fontSize={0.52} color="#FFFFFF"
+                    anchorX="center" anchorY="middle" fontWeight="bold">
                     {storeTheme.name}
                 </Text>
+                <pointLight position={[0, -0.9, 0.6]} intensity={0.8} color={storeTheme.accentColor} distance={7} />
             </group>
 
-            {/* Modern Checkout Counter */}
+            {/* ── Realistic Checkout Counter ── */}
             <group
-                position={[0, 0.7, -15]}
+                position={[0, 0, -15]}
                 onClick={(event) => {
                     event.stopPropagation();
-                    if (!canUseCheckout) return; // must be near to interact
+                    if (!canUseCheckout) return;
                     onCheckoutCounterClick?.();
                 }}
             >
-                <RoundedBox args={[7, 1.4, 2.2]} radius={0.08}>
-                    <meshStandardMaterial
-                        color={canUseCheckout ? storeTheme.accentColor : '#777'}
-                        roughness={0.4}
-                        metalness={0.3}
-                        emissive={canUseCheckout ? storeTheme.accentColor : '#333'}
-                        emissiveIntensity={canUseCheckout ? 0.2 : 0}
+                {/* Main counter body */}
+                <mesh position={[0, 0.52, 0]} castShadow receiveShadow>
+                    <boxGeometry args={[7.2, 1.04, 1.0]} />
+                    <meshStandardMaterial color="#DEDBD8" roughness={0.55} metalness={0.05} />
+                </mesh>
+                {/* Counter top — dark laminate surface */}
+                <mesh position={[0, 1.05, 0]}>
+                    <boxGeometry args={[7.2, 0.04, 1.05]} />
+                    <meshStandardMaterial color={canUseCheckout ? '#2C2C2C' : '#3C3C3C'}
+                        roughness={0.25} metalness={0.4}
+                        emissive={canUseCheckout ? storeTheme.accentColor : '#000'}
+                        emissiveIntensity={canUseCheckout ? 0.07 : 0}
                     />
-                </RoundedBox>
-                <Text position={[0, 1.3, 0]} fontSize={0.45} color="#FFFFFF" anchorX="center" fontWeight="bold">
-                    CHECKOUT
-                </Text>
-                <Text position={[0, 0.7, 1.2]} fontSize={0.22} color={canUseCheckout ? '#FFFFFF' : '#FFAA55'} anchorX="center" fontWeight="bold">
-                    {canUseCheckout ? 'Click to Checkout' : 'Move Closer'}
+                </mesh>
+                {/* Conveyor belt surface */}
+                <mesh position={[1.8, 1.07, 0]}>
+                    <boxGeometry args={[3.0, 0.01, 0.7]} />
+                    <meshStandardMaterial color="#222222" roughness={0.85} metalness={0.1} />
+                </mesh>
+                {/* Belt lane dividers */}
+                {[-0.35, 0.35].map((z, i) => (
+                    <mesh key={i} position={[1.8, 1.06, z]}>
+                        <boxGeometry args={[3.0, 0.02, 0.015]} />
+                        <meshStandardMaterial color="#888888" roughness={0.3} metalness={0.8} />
+                    </mesh>
+                ))}
+                {/* Customer side panel */}
+                <mesh position={[3.62, 0.52, 0]}>
+                    <boxGeometry args={[0.04, 1.04, 1.0]} />
+                    <meshStandardMaterial color="#BBBBBB" roughness={0.3} metalness={0.6} />
+                </mesh>
+                {/* POS monitor stand */}
+                <mesh position={[-2.2, 1.35, -0.2]} castShadow>
+                    <boxGeometry args={[0.06, 0.55, 0.06]} />
+                    <meshStandardMaterial color="#555555" roughness={0.4} metalness={0.7} />
+                </mesh>
+                {/* Monitor screen */}
+                <mesh position={[-2.2, 1.7, -0.28]}>
+                    <boxGeometry args={[0.42, 0.3, 0.03]} />
+                    <meshStandardMaterial color="#111111" roughness={0.1} metalness={0.5}
+                        emissive="#1A3A5C" emissiveIntensity={0.6}
+                    />
+                </mesh>
+                {/* Checkout label */}
+                <Text position={[0, 1.35, 0.54]} fontSize={0.3} color={canUseCheckout ? '#FFFFFF' : '#FFCC66'}
+                    anchorX="center" fontWeight="bold">
+                    {canUseCheckout ? '▶ CHECKOUT' : 'Move Closer'}
                 </Text>
                 {canUseCheckout && (
-                    <pointLight position={[0, 1.5, 0.5]} intensity={0.9} color="#FFD700" distance={5} />
+                    <pointLight position={[0, 1.8, 0.5]} intensity={0.7} color="#FFE8A0" distance={5} />
                 )}
             </group>
 
-            {/* Decorative Fountain */}
+            {/* ── End-cap promotional display (replaces fountain) ── */}
             <group position={[0, 0, 8]}>
-                <Cylinder args={[1.8, 2, 0.6, 32]} position={[0, 0.3, 0]}>
-                    <meshStandardMaterial color="#90CAF9" roughness={0.2} metalness={0.5} />
-                </Cylinder>
-                <Sphere args={[0.3, 16, 16]} position={[0, 0.8, 0]}>
-                    <meshStandardMaterial color="#64B5F6" emissive="#2196F3" emissiveIntensity={0.3} />
-                </Sphere>
-                <pointLight position={[0, 1, 0]} intensity={0.8} color="#64B5F6" distance={5} />
+                {/* Base plinth */}
+                <mesh position={[0, 0.12, 0]} castShadow receiveShadow>
+                    <boxGeometry args={[2.8, 0.24, 1.1]} />
+                    <meshStandardMaterial color="#C0B8B0" roughness={0.6} metalness={0.1} />
+                </mesh>
+                {/* Display table top */}
+                <mesh position={[0, 0.26, 0]}>
+                    <boxGeometry args={[2.8, 0.04, 1.1]} />
+                    <meshStandardMaterial color="#2C2422" roughness={0.3} metalness={0.2} />
+                </mesh>
+                {/* Vertical display panel back */}
+                <mesh position={[0, 1.1, -0.52]}>
+                    <boxGeometry args={[2.8, 1.7, 0.05]} />
+                    <meshStandardMaterial
+                        color={storeTheme.accentColor}
+                        roughness={0.4} metalness={0.3}
+                        emissive={storeTheme.accentColor}
+                        emissiveIntensity={0.15}
+                    />
+                </mesh>
+                <Text position={[0, 1.4, -0.47]} fontSize={0.28} color="#FFFFFF"
+                    anchorX="center" anchorY="middle" fontWeight="bold" maxWidth={2.4} textAlign="center">
+                    SPECIAL OFFERS
+                </Text>
+                <Text position={[0, 1.05, -0.47]} fontSize={0.18} color="#FFE066"
+                    anchorX="center" anchorY="middle" maxWidth={2.4} textAlign="center">
+                    Grab a deal today!
+                </Text>
+                {/* Spotlight on display */}
+                <pointLight position={[0, 2.2, 0]} intensity={0.5} color="#FFF5CC" distance={4} />
             </group>
 
             {/* Shelves with Products */}
