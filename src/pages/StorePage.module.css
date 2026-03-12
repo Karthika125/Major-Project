@@ -16,6 +16,40 @@
     cursor: crosshair;
 }
 
+/* Tiny fixed crosshair pinned to the centre of the viewport */
+.centerCrosshair {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 14px;
+    height: 14px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 900;
+}
+.centerCrosshair::before,
+.centerCrosshair::after {
+    content: '';
+    position: absolute;
+    background: rgba(255, 255, 255, 0.92);
+    border-radius: 999px;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.65);
+}
+.centerCrosshair::before {
+    width: 2px;
+    height: 14px;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+}
+.centerCrosshair::after {
+    width: 14px;
+    height: 2px;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
 .loading {
     display: flex;
     flex-direction: column;

@@ -197,7 +197,7 @@ export const ProductProximityHUD: React.FC<ProductProximityHUDProps> = ({ produc
                 </div>
 
                 <div className="proximity-hud-hint">
-                    Click product or press Space to view full details
+                    Aim the crosshair directly at a product, then click to view details
                 </div>
             </div>
         </>

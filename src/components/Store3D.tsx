@@ -34,6 +34,13 @@ const PRODUCT_GRID_CONFIG: ProductGridConfig = {
     shelfStartZ: -8,
 };
 
+/** Max world-unit distance the centre-gaze ray will detect a product. */
+const LOOK_TARGET_MAX_DISTANCE = 5;
+/** Player must be within this radius (XZ plane) to illuminate / click a product. */
+const PRODUCT_INTERACT_DISTANCE = 2.5;
+/** Player must be this close to click the checkout counter. */
+const CHECKOUT_INTERACT_DISTANCE = 2.0;
+
 interface ShelfLayout {
     shelfIndex: number;
     position: [number, number, number];
@@ -196,10 +203,23 @@ const ProductBox: React.FC<{
     product: Product;
     position: [number, number, number];
     onClick: () => void;
-}> = ({ product, position, onClick }) => {
+    onMeshMount?: (productId: Product['id'], mesh: THREE.Object3D | null) => void;
+    /** True when the player is within PRODUCT_INTERACT_DISTANCE of this product. */
+    isNear?: boolean;
+    /** True when the centre crosshair is aimed directly at this product. */
+    isGazedAt?: boolean;
+}> = ({ product, position, onClick, onMeshMount, isNear = false, isGazedAt = false }) => {
     const [hovered, setHovered] = useState(false);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
-    const meshRef = useRef<THREE.Mesh>(null);
+    const meshRef = useRef<THREE.Mesh | null>(null);
+
+    // Illuminate only when the player is nearby AND the crosshair is on this product.
+    const illuminated = isNear && isGazedAt;
+
+    const handleMeshRef = useCallback((mesh: THREE.Mesh | null) => {
+        meshRef.current = mesh;
+        onMeshMount?.(product.id, mesh);
+    }, [onMeshMount, product.id]);
 
     const meshUserData = useMemo(
         () => ({
@@ -226,8 +246,11 @@ const ProductBox: React.FC<{
     }, [product.image_url, product.name]);
 
     useFrame((state) => {
-        if (meshRef.current && hovered) {
+        if (!meshRef.current) return;
+        if (illuminated) {
             meshRef.current.rotation.y = Math.sin(state.clock.elapsedTime * 2) * 0.1;
+        } else {
+            meshRef.current.rotation.y *= 0.85; // smoothly reset rotation when not illuminated
         }
     });
 
@@ -235,38 +258,39 @@ const ProductBox: React.FC<{
         <group position={position}>
             {/* Product box with rounded edges */}
             <RoundedBox
-                ref={meshRef}
+                ref={handleMeshRef}
                 args={[0.38, 0.45, 0.22]}
                 radius={0.02}
                 smoothness={4}
                 userData={meshUserData}
                 onClick={(e) => {
                     e.stopPropagation();
+                    if (!isNear) return; // block click when player is too far away
                     onClick();
                 }}
-                onPointerOver={() => setHovered(true)}
+                onPointerOver={() => { if (isNear) setHovered(true); }}
                 onPointerOut={() => setHovered(false)}
             >
                 {texture ? (
                     <meshStandardMaterial
                         map={texture}
-                        emissive={hovered ? '#FFD700' : '#000'}
-                        emissiveIntensity={hovered ? 0.4 : 0}
+                        emissive={illuminated ? '#FFD700' : '#000'}
+                        emissiveIntensity={illuminated ? 0.55 : 0}
                         roughness={0.5}
                         metalness={0.1}
                     />
                 ) : (
                     <meshStandardMaterial
-                        color={hovered ? '#FFE4B5' : '#FFFFFF'}
+                        color={illuminated ? '#FFE4B5' : '#FFFFFF'}
                         roughness={0.3}
                         metalness={0.2}
                     />
                 )}
             </RoundedBox>
 
-            {/* Glow effect when hovered */}
-            {hovered && (
-                <pointLight position={[0, 0, 0.3]} intensity={0.5} color="#FFD700" distance={1} />
+            {/* Glow point-light only when illuminated (near + gazed) */}
+            {illuminated && (
+                <pointLight position={[0, 0, 0.3]} intensity={0.8} color="#FFD700" distance={1.2} />
             )}
 
             {/* Product info card */}
@@ -309,6 +333,9 @@ const Shelf: React.FC<{
     productSpacingY: number;
     maxProductsPerShelf: number;
     onProductClick: (product: Product) => void;
+    onProductMeshMount?: (productId: Product['id'], mesh: THREE.Object3D | null) => void;
+    nearbyProductIds?: Set<string>;
+    gazedProductId?: string | null;
 }> = ({
     position,
     rotation = [0, 0, 0],
@@ -318,6 +345,9 @@ const Shelf: React.FC<{
     productSpacingY,
     maxProductsPerShelf,
     onProductClick,
+    onProductMeshMount,
+    nearbyProductIds,
+    gazedProductId,
 }) => {
     const visibleProducts = products.slice(0, maxProductsPerShelf);
     const shelfRows = Math.max(1, Math.ceil(maxProductsPerShelf / productsPerRow));
@@ -358,6 +388,9 @@ const Shelf: React.FC<{
                         product={product}
                         position={[x, y, 0.25]}
                         onClick={() => onProductClick(product)}
+                        onMeshMount={onProductMeshMount}
+                        isNear={nearbyProductIds?.has(String(product.id)) ?? false}
+                        isGazedAt={gazedProductId === String(product.id)}
                     />
                 );
             })}
@@ -486,8 +519,13 @@ export const Store3D: React.FC<Store3DProps> = ({
     presenceManager,
     onClosestProductChange,
 }) => {
+    const { camera } = useThree();
     const [currentUserPosition, setCurrentUserPosition] = useState<[number, number, number]>([0, 1.6, 12]);
+    const [gazedProductId, setGazedProductId] = useState<string | null>(null);
     const lastUpdateTime = useRef(0);
+    const raycasterRef = useRef(new THREE.Raycaster());
+    const productMeshesRef = useRef<Map<string, THREE.Object3D>>(new Map());
+    const lastGazedIdRef = useRef<string | null>(null);
     
     // Subscribe to real player data from game store instead of mock data
     const otherPlayers = useGameStore((state) => state.otherPlayers);
@@ -576,6 +614,70 @@ export const Store3D: React.FC<Store3DProps> = ({
         return positions;
     }, [shelfLayouts]);
 
+    const registerProductMesh = useCallback((productId: Product['id'], mesh: THREE.Object3D | null) => {
+        const key = String(productId);
+        if (mesh) productMeshesRef.current.set(key, mesh);
+        else productMeshesRef.current.delete(key);
+    }, []);
+
+    const resolveProduct = useCallback((obj: THREE.Object3D | null): Product | null => {
+        let cur: THREE.Object3D | null = obj;
+        while (cur) {
+            const p = cur.userData?.product as Product | undefined;
+            if (p) return p;
+            cur = cur.parent;
+        }
+        return null;
+    }, []);
+
+    // Each frame: cast a ray from the exact screen centre and expose the
+    // product under the crosshair via onClosestProductChange.
+    useFrame(() => {
+        const targets = Array.from(productMeshesRef.current.values());
+        if (targets.length === 0) {
+            if (lastGazedIdRef.current !== null) {
+                lastGazedIdRef.current = null;
+                onClosestProductChange?.(null);
+            }
+            return;
+        }
+        const rc = raycasterRef.current;
+        rc.near = 0;
+        rc.far = LOOK_TARGET_MAX_DISTANCE;
+        rc.setFromCamera(new THREE.Vector2(0, 0), camera);
+        const gazed =
+            rc.intersectObjects(targets, false)
+               .map((h) => resolveProduct(h.object))
+               .find((p): p is Product => p !== null) ?? null;
+        const nextId = gazed ? String(gazed.id) : null;
+        if (nextId === lastGazedIdRef.current) return;
+        lastGazedIdRef.current = nextId;
+        setGazedProductId(nextId);
+        onClosestProductChange?.(gazed);
+    });
+
+    // Products the player is close enough to illuminate and click.
+    const nearbyProductIds = useMemo(() => {
+        const nearby = new Set<string>();
+        const [px, , pz] = currentUserPosition;
+        productWorldPositions.forEach(({ product, position: [wx, , wz] }) => {
+            const dx = px - wx;
+            const dz = pz - wz;
+            if (dx * dx + dz * dz <= PRODUCT_INTERACT_DISTANCE * PRODUCT_INTERACT_DISTANCE) {
+                nearby.add(String(product.id));
+            }
+        });
+        return nearby;
+    }, [currentUserPosition, productWorldPositions]);
+
+    // Whether the player is close enough to use the checkout counter.
+    const canUseCheckout = useMemo(() => {
+        const [px, , pz] = currentUserPosition;
+        const dx = px - 0;   // checkout at x=0
+        const dz = pz - (-15); // checkout at z=-15
+        return dx * dx + dz * dz <= CHECKOUT_INTERACT_DISTANCE * CHECKOUT_INTERACT_DISTANCE;
+    }, [currentUserPosition]);
+
     const collisionBoxes = useMemo(() => {
         const shelfWidth = Math.max(2.6, (PRODUCT_GRID_CONFIG.productsPerRow - 1) * PRODUCT_GRID_CONFIG.productSpacingX + 1.1);
 
@@ -620,28 +722,8 @@ export const Store3D: React.FC<Store3DProps> = ({
                 }).catch((err: Error) => console.error('Presence update failed', err));
             }
 
-            // Find closest product
-            let nearest: Product | null = null;
-            let minDist = 2.5;
-
-            productWorldPositions.forEach(({ product, position: productPosition }) => {
-                const productX = productPosition[0];
-                const productZ = productPosition[2];
-
-                const dist = Math.sqrt(
-                    Math.pow(position[0] - productX, 2) +
-                    Math.pow(position[2] - productZ, 2)
-                );
-
-                if (dist < minDist) {
-                    nearest = product;
-                    minDist = dist;
-                }
-            });
-
-            onClosestProductChange?.(nearest);
         }
-    }, [presenceManager, productWorldPositions, onClosestProductChange]);
+    }, [presenceManager]);
 
     if (!products || products.length === 0) {
         return (
@@ -709,19 +791,28 @@ export const Store3D: React.FC<Store3DProps> = ({
                 position={[0, 0.7, -15]}
                 onClick={(event) => {
                     event.stopPropagation();
+                    if (!canUseCheckout) return; // must be near to interact
                     onCheckoutCounterClick?.();
                 }}
             >
                 <RoundedBox args={[7, 1.4, 2.2]} radius={0.08}>
-                    <meshStandardMaterial color={storeTheme.accentColor} roughness={0.4} metalness={0.3} />
+                    <meshStandardMaterial
+                        color={canUseCheckout ? storeTheme.accentColor : '#777'}
+                        roughness={0.4}
+                        metalness={0.3}
+                        emissive={canUseCheckout ? storeTheme.accentColor : '#333'}
+                        emissiveIntensity={canUseCheckout ? 0.2 : 0}
+                    />
                 </RoundedBox>
                 <Text position={[0, 1.3, 0]} fontSize={0.45} color="#FFFFFF" anchorX="center" fontWeight="bold">
                     CHECKOUT
                 </Text>
-                <Text position={[0, 0.7, 1.2]} fontSize={0.22} color="#FFFFFF" anchorX="center" fontWeight="bold">
-                    Click Counter
+                <Text position={[0, 0.7, 1.2]} fontSize={0.22} color={canUseCheckout ? '#FFFFFF' : '#FFAA55'} anchorX="center" fontWeight="bold">
+                    {canUseCheckout ? 'Click to Checkout' : 'Move Closer'}
                 </Text>
-                <pointLight position={[0, 1.5, 0.5]} intensity={0.6} color="#FFD700" distance={4} />
+                {canUseCheckout && (
+                    <pointLight position={[0, 1.5, 0.5]} intensity={0.9} color="#FFD700" distance={5} />
+                )}
             </group>
 
             {/* Decorative Fountain */}
@@ -746,6 +837,9 @@ export const Store3D: React.FC<Store3DProps> = ({
                     productSpacingY={PRODUCT_GRID_CONFIG.productSpacingY}
                     maxProductsPerShelf={PRODUCT_GRID_CONFIG.productsPerShelf}
                     onProductClick={onProductClick}
+                    onProductMeshMount={registerProductMesh}
+                    nearbyProductIds={nearbyProductIds}
+                    gazedProductId={gazedProductId}
                 />
             ))}
 

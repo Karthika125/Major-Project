@@ -384,6 +384,9 @@ export const StorePage: React.FC = () => {
                 />
             </Canvas>
 
+            {/* Centre-screen crosshair */}
+            <div className={styles.centerCrosshair} aria-hidden="true" />
+
             {/* Product Proximity HUD */}
             <ProductProximityHUD product={closestProduct} />
 
