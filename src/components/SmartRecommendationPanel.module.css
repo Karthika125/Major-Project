@@ -1,0 +1,495 @@
+/* ============================================================
+   SmartRecommendationPanel.module.css
+   Premium glassmorphism recommendation panel for virtual store
+   ============================================================ */
+
+/* ── Panel Shell ─────────────────────────────────────────── */
+.panel {
+    position: fixed;
+    top: 50%;
+    right: 20px;
+    transform: translateY(-50%);
+    width: 300px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    background: rgba(10, 10, 20, 0.85);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    box-shadow:
+        0 24px 48px rgba(0, 0, 0, 0.6),
+        0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+        0 0 40px rgba(102, 126, 234, 0.08);
+    z-index: 90;
+    overflow: hidden;
+    animation: panelSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    transition: width 0.4s ease, transform 0.4s ease;
+}
+
+.panel.collapsed {
+    width: 56px;
+    overflow: hidden;
+}
+
+@keyframes panelSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-50%) translateX(120px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(-50%) translateX(0);
+    }
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 16px 0;
+    flex-shrink: 0;
+}
+
+.headerLeft {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+}
+
+.sparkleIcon {
+    font-size: 20px;
+    flex-shrink: 0;
+    animation: sparkle 2s ease-in-out infinite;
+}
+
+@keyframes sparkle {
+    0%, 100% { transform: scale(1) rotate(0deg); }
+    50%       { transform: scale(1.15) rotate(10deg); }
+}
+
+.title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffffff;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+}
+
+.subtitle {
+    font-size: 10px;
+    color: rgba(255,255,255,0.45);
+    white-space: nowrap;
+    margin-top: 1px;
+}
+
+.collapseBtn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.6);
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 12px;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.collapseBtn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+}
+
+/* ── Tabs ────────────────────────────────────────────────── */
+.tabs {
+    display: flex;
+    padding: 12px 12px 0;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.tab {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 7px 3px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.tab:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.tab.active {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.5) 0%, rgba(118, 75, 162, 0.5) 100%);
+    border-color: rgba(102, 126, 234, 0.5);
+    color: white;
+    box-shadow: 0 2px 12px rgba(102, 126, 234, 0.3);
+}
+
+/* ── Tab description blurb ───────────────────────────────── */
+.tabBlurb {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.32);
+    line-height: 1.45;
+    padding: 8px 4px 2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+/* ── Scrollable Content ──────────────────────────────────── */
+.content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+}
+
+.content::-webkit-scrollbar { width: 3px; }
+.content::-webkit-scrollbar-track { background: transparent; }
+.content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+}
+
+/* ── Loading State ───────────────────────────────────────── */
+.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    gap: 12px;
+}
+
+.loadingDots { display: flex; gap: 6px; }
+
+.loadingDots span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    animation: dotBounce 1.4s ease-in-out infinite;
+}
+
+.loadingDots span:nth-child(2) { animation-delay: 0.2s; }
+.loadingDots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dotBounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+    40%            { transform: scale(1.0); opacity: 1; }
+}
+
+.loadingText { font-size: 12px; color: rgba(255, 255, 255, 0.4); }
+
+/* ── Empty State ─────────────────────────────────────────── */
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 12px;
+    gap: 8px;
+    text-align: center;
+}
+
+.emptyIcon { font-size: 34px; opacity: 0.45; }
+
+.emptyText {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.32);
+    line-height: 1.5;
+}
+
+/* ── Product Card ────────────────────────────────────────── */
+.card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 12px 12px 10px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.25s cubic-bezier(0.34, 1.26, 0.64, 1);
+    animation: cardFadeIn 0.35s ease both;
+}
+
+.card:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(102, 126, 234, 0.4);
+    transform: translateX(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(102,126,234,0.2);
+}
+
+@keyframes cardFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.card:nth-child(1) { animation-delay: 0.05s; }
+.card:nth-child(2) { animation-delay: 0.10s; }
+.card:nth-child(3) { animation-delay: 0.15s; }
+.card:nth-child(4) { animation-delay: 0.20s; }
+.card:nth-child(5) { animation-delay: 0.25s; }
+
+/* ── Card Layout ─────────────────────────────────────────── */
+.cardGlow {
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+}
+
+.card:hover .cardGlow { opacity: 1; }
+
+.cardBody {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+.productImageWrap {
+    width: 50px;
+    height: 50px;
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.productImage { width: 100%; height: 100%; object-fit: cover; }
+.productPlaceholder { font-size: 22px; opacity: 0.65; }
+
+.cardInfo { flex: 1; min-width: 0; }
+
+.productName {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+    margin-bottom: 2px;
+}
+
+.productCategory {
+    font-size: 9.5px;
+    color: rgba(255, 255, 255, 0.33);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 5px;
+}
+
+.productPrice {
+    font-size: 14px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #667eea, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* ── Trend count badge (above reason) ───────────────────── */
+.trendBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    margin-bottom: 5px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(251, 191, 36, 0.12);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+/* ── Reason row (badge + "why?" button) ──────────────────── */
+.reasonRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.reasonBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+}
+
+.reasonBadge.order_history  { background: rgba(34,197,94,0.14); color: #4ade80; border: 1px solid rgba(34,197,94,0.22); }
+.reasonBadge.cart_history   { background: rgba(251,146,60,.14); color: #fb923c; border: 1px solid rgba(251,146,60,.22); }
+.reasonBadge.view_history   { background: rgba(96,165,250,.14); color: #60a5fa; border: 1px solid rgba(96,165,250,.22); }
+.reasonBadge.trending       { background: rgba(251,191,36,.14); color: #fbbf24; border: 1px solid rgba(251,191,36,.22); }
+.reasonBadge.category_match { background: rgba(167,139,250,.14); color: #a78bfa; border: 1px solid rgba(167,139,250,.22); }
+.reasonBadge.new_arrival    { background: rgba(236,72,153,.14);  color: #f472b6; border: 1px solid rgba(236,72,153,.22); }
+
+/* ── "why?" toggle button ────────────────────────────────── */
+.whyBtn {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+.whyBtn:hover {
+    background: rgba(102, 126, 234, 0.2);
+    color: #a78bfa;
+    border-color: rgba(167, 139, 250, 0.35);
+}
+
+/* ── Expanded detail text ────────────────────────────────── */
+.reasonDetail {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.55);
+    line-height: 1.55;
+    margin-bottom: 6px;
+    animation: detailExpand 0.2s ease;
+}
+
+@keyframes detailExpand {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Score Bar ───────────────────────────────────────────── */
+.scoreBar {
+    margin-top: 4px;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.scoreBarFill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #667eea, #a78bfa);
+    transition: width 0.7s ease;
+}
+
+/* ── Quick Add ───────────────────────────────────────────── */
+.quickAdd {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: all 0.2s ease;
+    pointer-events: none;
+}
+
+.card:hover .quickAdd {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: all;
+}
+
+.quickAdd:hover {
+    transform: scale(1.05) !important;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+.footer {
+    padding: 8px 14px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex-shrink: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.footerDot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.footerText { font-size: 10px; color: rgba(255, 255, 255, 0.25); }
+
+/* ── Collapsed View ──────────────────────────────────────── */
+.collapsedButton {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 80px;
+    padding: 16px 0;
+    cursor: pointer;
+    gap: 4px;
+}
+
+.collapsedIcon {
+    font-size: 20px;
+    animation: sparkle 2s ease-in-out infinite;
+}
+
+.collapsedLabel {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.4);
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    letter-spacing: 0.08em;
+    font-weight: 600;
+}

@@ -21,6 +21,7 @@ import { PerformanceMonitor } from '@/components/PerformanceMonitor';
 import { CameraStyleAdvisor } from '../components/CameraStyleAdvisor';
 import { Store3D } from '../components/Store3D';
 import { ProductProximityHUD } from '../components/ProductProximityHUD';
+import { SmartRecommendationPanel } from '../components/SmartRecommendationPanel';
 import styles from './StorePage.module.css';
 
 interface StoreTheme {
@@ -389,6 +390,9 @@ export const StorePage: React.FC = () => {
 
             {/* Product Proximity HUD */}
             <ProductProximityHUD product={closestProduct} />
+
+            {/* Smart Recommendation Panel */}
+            <SmartRecommendationPanel storeId={storeId} />
 
 
             {/* Back to Mall Button */}
