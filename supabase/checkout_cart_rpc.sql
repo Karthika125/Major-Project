@@ -6,7 +6,12 @@ begin;
 -- Disable legacy trigger-driven checkout side effects to avoid duplicate order_items/stock updates.
 drop trigger if exists trg_populate_order_items_from_active_cart on public.orders;
 
-create or replace function public.checkout_cart(p_user_id uuid)
+drop function if exists public.checkout_cart(uuid, uuid);
+
+create or replace function public.checkout_cart(
+  p_user_id uuid,
+  p_store_id uuid default null
+)
 returns uuid
 language plpgsql
 security definer
@@ -41,10 +46,12 @@ begin
   end if;
 
   -- Pick the newest active cart that has items and lock the cart row.
+  -- When p_store_id is provided, checkout is restricted to that store.
   select c.id, c.store_id
     into v_cart_id, v_store_id
   from public.carts c
   where c.user_id = p_user_id
+    and (p_store_id is null or c.store_id = p_store_id)
     and c.is_active = true
     and exists (
       select 1
@@ -56,7 +63,10 @@ begin
   for update;
 
   if v_cart_id is null then
-    raise exception 'Your cart is empty.'
+    raise exception case
+      when p_store_id is null then 'Your cart is empty.'
+      else 'Your cart for this store is empty.'
+    end
       using errcode = 'P0001';
   end if;
 
@@ -173,8 +183,20 @@ exception
 end;
 $$;
 
+create or replace function public.checkout_cart(p_user_id uuid)
+returns uuid
+language sql
+security definer
+set search_path = public
+as $$
+  select public.checkout_cart(p_user_id, null::uuid);
+$$;
+
 revoke all on function public.checkout_cart(uuid) from public;
+revoke all on function public.checkout_cart(uuid, uuid) from public;
 grant execute on function public.checkout_cart(uuid) to authenticated;
+grant execute on function public.checkout_cart(uuid, uuid) to authenticated;
 grant execute on function public.checkout_cart(uuid) to service_role;
+grant execute on function public.checkout_cart(uuid, uuid) to service_role;
 
 commit;

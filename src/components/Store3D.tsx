@@ -41,6 +41,12 @@ const PRODUCT_INTERACT_DISTANCE = 2.5;
 /** Player must be this close to click the checkout counter. */
 const CHECKOUT_INTERACT_DISTANCE = 2.0;
 
+const isTextInputTarget = (target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement)) return false;
+    const tagName = target.tagName;
+    return target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+};
+
 interface ShelfLayout {
     shelfIndex: number;
     position: [number, number, number];
@@ -1268,6 +1274,19 @@ export const Store3D: React.FC<Store3DProps> = ({
     const raycasterRef = useRef(new THREE.Raycaster());
     const productMeshesRef = useRef<Map<string, THREE.Object3D>>(new Map());
     const lastGazedIdRef = useRef<string | null>(null);
+    const interactionStateRef = useRef<{
+        gazedProductId: string | null;
+        nearbyProductIds: Set<string>;
+        canUseCheckout: boolean;
+        products: Product[];
+    }>({
+        gazedProductId: null,
+        nearbyProductIds: new Set<string>(),
+        canUseCheckout: false,
+        products,
+    });
+    const onProductClickRef = useRef(onProductClick);
+    const onCheckoutCounterClickRef = useRef(onCheckoutCounterClick);
     
     // Subscribe to real player data from game store instead of mock data
     const otherPlayers = useGameStore((state) => state.otherPlayers);
@@ -1419,6 +1438,57 @@ export const Store3D: React.FC<Store3DProps> = ({
         const dz = pz - (-15); // checkout at z=-15
         return dx * dx + dz * dz <= CHECKOUT_INTERACT_DISTANCE * CHECKOUT_INTERACT_DISTANCE;
     }, [currentUserPosition]);
+
+    useEffect(() => {
+        interactionStateRef.current = {
+            gazedProductId,
+            nearbyProductIds,
+            canUseCheckout,
+            products,
+        };
+    }, [gazedProductId, nearbyProductIds, canUseCheckout, products]);
+
+    useEffect(() => {
+        onProductClickRef.current = onProductClick;
+    }, [onProductClick]);
+
+    useEffect(() => {
+        onCheckoutCounterClickRef.current = onCheckoutCounterClick;
+    }, [onCheckoutCounterClick]);
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.code !== 'KeyE' || event.repeat) return;
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
+            if (isTextInputTarget(event.target)) return;
+
+            const {
+                gazedProductId: activeProductId,
+                nearbyProductIds: nearbyIds,
+                canUseCheckout: checkoutActive,
+                products: currentProducts,
+            } = interactionStateRef.current;
+
+            if (activeProductId && nearbyIds.has(activeProductId)) {
+                const targetProduct = currentProducts.find((product) => String(product.id) === activeProductId);
+                if (targetProduct) {
+                    event.preventDefault();
+                    onProductClickRef.current(targetProduct);
+                    return;
+                }
+            }
+
+            if (!checkoutActive) return;
+
+            event.preventDefault();
+            onCheckoutCounterClickRef.current?.();
+        };
+
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, []);
 
     const collisionBoxes = useMemo(() => {
         const shelfWidth = Math.max(2.6, (PRODUCT_GRID_CONFIG.productsPerRow - 1) * PRODUCT_GRID_CONFIG.productSpacingX + 1.1);
