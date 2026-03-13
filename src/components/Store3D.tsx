@@ -664,7 +664,7 @@ const ThirdPersonController: React.FC<{
     const moveState  = useRef({ forward: false, backward: false, left: false, right: false });
 
     const CAM_DIST   = 3.8;   // distance camera stays behind character
-    const CAM_MIN_P  = 0.15;  // min pitch (nearly horizontal)
+    const CAM_MIN_P  = -0.25; // min pitch (allows looking above)
     const CAM_MAX_P  = 0.72;  // max pitch (looking more downward)
     const LOOK_H     = 1.08;  // avatar head centre is at ~0.62+0.47 = 1.09 above floor
     const SPEED      = 5.5;
