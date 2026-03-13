@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { PointerLockControls, Text, Sphere, Cylinder, RoundedBox } from '@react-three/drei';
+import { Text, Sphere, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore } from '../lib/store/gameStore';
 import type { Database } from '../lib/supabase/types';
@@ -71,127 +71,318 @@ interface Store3DProps {
     onClosestProductChange?: (product: Product | null) => void;
 }
 
-// Enhanced Avatar Component with animations and action indicators
+
+// ── Utility: derive clothing colours per style ──────────────────────────────
+const getStyleColors = (style: string, bodyColor: string) => {
+    switch (style) {
+        case 'formal':  return { shirt: '#1a1a2e', pants: '#0f0f1a', shoes: '#111' };
+        case 'sporty':  return { shirt: bodyColor, pants: '#222', shoes: '#e0e0e0' };
+        case 'cool':    return { shirt: '#111', pants: bodyColor, shoes: '#333' };
+        default:        return { shirt: bodyColor, pants: '#2c3e50', shoes: '#4a4a4a' }; // casual
+    }
+};
+
+// ── Full Human-Like Avatar ───────────────────────────────────────────────────
 const Avatar: React.FC<{
-    position: [number, number, number];
-    username: string;
+    position:       [number, number, number];
+    rotation?:      [number, number, number];
+    username:       string;
     isCurrentUser?: boolean;
     customization?: { bodyColor: string; skinTone: string; style: string };
     animationState?: 'idle' | 'walking' | 'waving' | 'shopping';
-    currentAction?: 'idle' | 'walking' | 'viewing_product' | 'shopping';
-}> = ({ position, username, isCurrentUser = false, customization, animationState = 'idle', currentAction = 'idle' }) => {
-    const meshRef = useRef<THREE.Group>(null);
-    
-    const colors = {
-        body: customization?.bodyColor || '#4A90E2',
-        skin: customization?.skinTone || '#FFD1A3',
-    };
+    currentAction?:  'idle' | 'walking' | 'viewing_product' | 'shopping';
+}> = ({
+    position,
+    rotation = [0, 0, 0],
+    username,
+    isCurrentUser = false,
+    customization,
+    animationState = 'idle',
+    currentAction  = 'idle',
+}) => {
+    const groupRef   = useRef<THREE.Group>(null);
+    const headRef    = useRef<THREE.Group>(null);
+    const lArmRef    = useRef<THREE.Group>(null);
+    const rArmRef    = useRef<THREE.Group>(null);
+    const lLegRef    = useRef<THREE.Group>(null);
+    const rLegRef    = useRef<THREE.Group>(null);
 
-    // Animate avatar based on state
+    const skin  = customization?.skinTone || '#FFD1A3';
+    const style = customization?.style    || 'casual';
+    const { shirt, pants, shoes } = getStyleColors(style, customization?.bodyColor || '#4A90E2');
+
     useFrame((state) => {
-        if (!meshRef.current) return;
-        
-        const time = state.clock.elapsedTime;
-        
+        const t = state.clock.elapsedTime;
+
+        if (!groupRef.current) return;
+
+        // The avatar mesh group origin sits at the pelvis; feet are ~0.62 units below
+        // the visual floor level. Lift baseY by 0.62 so the avatar stands on the floor.
+        // Current user: position[1]=0 (from ThirdPersonController).  baseY = 0.62
+        // Other players: position[1]=1.6 (camera height from presence). baseY = 0.62
+        const baseY = isCurrentUser ? position[1] + 0.62 : position[1] - 0.98;
+
         if (animationState === 'walking') {
-            // Bobbing motion while walking
-            meshRef.current.position.y = position[1] + Math.sin(time * 8) * 0.05;
+            const speed = 8;
+            const swing = Math.sin(t * speed) * 0.35;
+
+            // Body bob
+            groupRef.current.position.y = baseY + Math.abs(Math.sin(t * speed)) * 0.04;
+
+            // Head turns side-to-side slightly while walking
+            if (headRef.current)  headRef.current.rotation.y  = Math.sin(t * speed * 0.5) * 0.1;
+
+            // Arm swing (opposite to legs)
+            if (lArmRef.current)  lArmRef.current.rotation.x  =  swing;
+            if (rArmRef.current)  rArmRef.current.rotation.x  = -swing;
+
+            // Leg swing
+            if (lLegRef.current)  lLegRef.current.rotation.x  = -swing;
+            if (rLegRef.current)  rLegRef.current.rotation.x  =  swing;
+
         } else if (animationState === 'waving') {
-            // Slight rotation for waving
-            meshRef.current.rotation.z = Math.sin(time * 4) * 0.1;
+            groupRef.current.position.y = baseY;
+            if (rArmRef.current) {
+                rArmRef.current.rotation.x = -1.2 + Math.sin(t * 6) * 0.3;
+                rArmRef.current.rotation.z = -0.4;
+            }
+            if (headRef.current) headRef.current.rotation.y = Math.sin(t * 2) * 0.15;
+
         } else {
-            // Subtle idle breathing
-            meshRef.current.position.y = position[1] + Math.sin(time * 2) * 0.02;
-            meshRef.current.rotation.z = 0;
+            // Idle: breathing + subtle head sway
+            const breathe = Math.sin(t * 1.8) * 0.012;
+            groupRef.current.position.y = baseY + breathe;
+            groupRef.current.scale.y    = 1 + breathe * 0.3;
+
+            if (headRef.current)  headRef.current.rotation.y  = Math.sin(t * 0.7) * 0.06;
+            if (lArmRef.current)  lArmRef.current.rotation.x  = 0;
+            if (rArmRef.current) { rArmRef.current.rotation.x = 0; rArmRef.current.rotation.z = 0; }
+            if (lLegRef.current)  lLegRef.current.rotation.x  = 0;
+            if (rLegRef.current)  rLegRef.current.rotation.x  = 0;
         }
     });
 
-    if (isCurrentUser) {
-        return (
-            <group position={position}>
-                {/* Glowing ground indicator */}
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.59, 0]}>
-                    <ringGeometry args={[0.2, 0.28, 32]} />
-                    <meshBasicMaterial color="#00FFD4" transparent opacity={0.6} />
-                </mesh>
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.58, 0]}>
-                    <circleGeometry args={[0.2, 32]} />
-                    <meshBasicMaterial color="#00FFD4" transparent opacity={0.2} />
-                </mesh>
 
-                {/* Visible hands at bottom */}
-                <group position={[0, -0.8, 0.5]}>
-                    <Sphere args={[0.05, 12, 12]} position={[-0.18, 0, 0]}>
-                        <meshStandardMaterial color={colors.skin} roughness={0.6} metalness={0.1} />
-                    </Sphere>
-                    <Sphere args={[0.05, 12, 12]} position={[0.18, 0, 0]}>
-                        <meshStandardMaterial color={colors.skin} roughness={0.6} metalness={0.1} />
-                    </Sphere>
-                </group>
-            </group>
-        );
-    }
 
-    // Enhanced full avatar for other players
+    // feetPosition Y is normally overridden each frame by useFrame's baseY,
+    // but we set a consistent initial value so the first frame is correct too.
+    const feetPosition: [number, number, number] = isCurrentUser
+        ? [position[0], position[1] + 0.62, position[2]]
+        : [position[0], position[1] - 0.98, position[2]];
+
     return (
-        <group ref={meshRef} position={position}>
-            {/* Body with better shape */}
-            <mesh position={[0, 0.15, 0]}>
-                <capsuleGeometry args={[0.08, 0.25, 8, 16]} />
-                <meshStandardMaterial color={colors.body} roughness={0.7} metalness={0.3} />
+        <group ref={groupRef} position={feetPosition} rotation={rotation}>
+
+            {/* ── Legs (origin at hip, pivot for walk cycle) ── */}
+            {/* Left leg */}
+            <group ref={lLegRef} position={[-0.085, -0.05, 0]}>
+                {/* Upper leg */}
+                <mesh position={[0, -0.15, 0]}>
+                    <capsuleGeometry args={[0.055, 0.22, 6, 8]} />
+                    <meshStandardMaterial color={pants} roughness={0.8} />
+                </mesh>
+                {/* Lower leg */}
+                <mesh position={[0, -0.40, 0]}>
+                    <capsuleGeometry args={[0.045, 0.2, 6, 8]} />
+                    <meshStandardMaterial color={pants} roughness={0.8} />
+                </mesh>
+                {/* Shoe */}
+                <mesh position={[0, -0.56, 0.03]}>
+                    <boxGeometry args={[0.09, 0.05, 0.16]} />
+                    <meshStandardMaterial color={shoes} roughness={0.5} metalness={0.2} />
+                </mesh>
+            </group>
+
+            {/* Right leg */}
+            <group ref={rLegRef} position={[0.085, -0.05, 0]}>
+                <mesh position={[0, -0.15, 0]}>
+                    <capsuleGeometry args={[0.055, 0.22, 6, 8]} />
+                    <meshStandardMaterial color={pants} roughness={0.8} />
+                </mesh>
+                <mesh position={[0, -0.40, 0]}>
+                    <capsuleGeometry args={[0.045, 0.2, 6, 8]} />
+                    <meshStandardMaterial color={pants} roughness={0.8} />
+                </mesh>
+                <mesh position={[0, -0.56, 0.03]}>
+                    <boxGeometry args={[0.09, 0.05, 0.16]} />
+                    <meshStandardMaterial color={shoes} roughness={0.5} metalness={0.2} />
+                </mesh>
+            </group>
+
+            {/* ── Torso ── */}
+            <mesh position={[0, 0.14, 0]}>
+                <capsuleGeometry args={[0.115, 0.30, 8, 16]} />
+                <meshStandardMaterial color={shirt} roughness={0.75} metalness={0.05} />
             </mesh>
 
-            {/* Head with better lighting */}
-            <Sphere args={[0.08, 16, 16]} position={[0, 0.4, 0]}>
-                <meshStandardMaterial color={colors.skin} roughness={0.5} metalness={0.1} />
-            </Sphere>
+            {/* Belt line */}
+            <mesh position={[0, -0.04, 0]}>
+                <cylinderGeometry args={[0.118, 0.118, 0.04, 16]} />
+                <meshStandardMaterial color="#111" roughness={0.4} metalness={0.6} />
+            </mesh>
 
-            {/* Eyes */}
-            <Sphere args={[0.012, 8, 8]} position={[-0.025, 0.42, 0.07]}>
-                <meshStandardMaterial color="#2C3E50" />
-            </Sphere>
-            <Sphere args={[0.012, 8, 8]} position={[0.025, 0.42, 0.07]}>
-                <meshStandardMaterial color="#2C3E50" />
-            </Sphere>
-
-            {/* Username with background */}
-            <group position={[0, 0.65, 0]}>
-                <mesh>
-                    <planeGeometry args={[username.length * 0.08 + 0.1, 0.15]} />
-                    <meshBasicMaterial color="#000000" transparent opacity={0.6} />
+            {/* ── Left Arm (origin at shoulder) ── */}
+            <group ref={lArmRef} position={[-0.175, 0.26, 0]}>
+                {/* Upper arm */}
+                <mesh position={[0, -0.13, 0]}>
+                    <capsuleGeometry args={[0.042, 0.16, 6, 8]} />
+                    <meshStandardMaterial color={shirt} roughness={0.75} />
                 </mesh>
-                <Text
-                    position={[0, 0, 0.01]}
-                    fontSize={0.08}
-                    color="#FFFFFF"
-                    anchorX="center"
-                    anchorY="middle"
-                >
+                {/* Forearm */}
+                <mesh position={[0, -0.34, 0]}>
+                    <capsuleGeometry args={[0.034, 0.16, 6, 8]} />
+                    <meshStandardMaterial color={skin} roughness={0.6} />
+                </mesh>
+                {/* Hand */}
+                <Sphere args={[0.038, 10, 10]} position={[0, -0.50, 0]}>
+                    <meshStandardMaterial color={skin} roughness={0.55} />
+                </Sphere>
+            </group>
+
+            {/* ── Right Arm ── */}
+            <group ref={rArmRef} position={[0.175, 0.26, 0]}>
+                <mesh position={[0, -0.13, 0]}>
+                    <capsuleGeometry args={[0.042, 0.16, 6, 8]} />
+                    <meshStandardMaterial color={shirt} roughness={0.75} />
+                </mesh>
+                <mesh position={[0, -0.34, 0]}>
+                    <capsuleGeometry args={[0.034, 0.16, 6, 8]} />
+                    <meshStandardMaterial color={skin} roughness={0.6} />
+                </mesh>
+                <Sphere args={[0.038, 10, 10]} position={[0, -0.50, 0]}>
+                    <meshStandardMaterial color={skin} roughness={0.55} />
+                </Sphere>
+            </group>
+
+            {/* ── Neck ── */}
+            <mesh position={[0, 0.36, 0]}>
+                <cylinderGeometry args={[0.048, 0.055, 0.1, 12]} />
+                <meshStandardMaterial color={skin} roughness={0.6} />
+            </mesh>
+
+            {/* ── Head (separate group so it can rotate independently) ── */}
+            <group ref={headRef} position={[0, 0.47, 0]}>
+                {/* Skull */}
+                <Sphere args={[0.115, 20, 20]}>
+                    <meshStandardMaterial color={skin} roughness={0.55} metalness={0.05} />
+                </Sphere>
+
+                {/* Hair cap (matches body colour for personality) */}
+                <Sphere args={[0.117, 16, 16]} position={[0, 0.04, -0.01]}>
+                    <meshStandardMaterial
+                        color={style === 'formal' ? '#1a1a1a' : style === 'sporty' ? '#222' : '#3a2a1a'}
+                        roughness={0.9}
+                        side={THREE.FrontSide}
+                    />
+                </Sphere>
+
+                {/* Eyes */}
+                <Sphere args={[0.018, 10, 10]} position={[-0.038, 0.01, 0.1]}>
+                    <meshStandardMaterial color="#fff" roughness={0.2} />
+                </Sphere>
+                <Sphere args={[0.018, 10, 10]} position={[0.038, 0.01, 0.1]}>
+                    <meshStandardMaterial color="#fff" roughness={0.2} />
+                </Sphere>
+                {/* Pupils */}
+                <Sphere args={[0.010, 8, 8]} position={[-0.038, 0.01, 0.115]}>
+                    <meshStandardMaterial color="#1a1a2e" />
+                </Sphere>
+                <Sphere args={[0.010, 8, 8]} position={[0.038, 0.01, 0.115]}>
+                    <meshStandardMaterial color="#1a1a2e" />
+                </Sphere>
+                {/* Iris highlights */}
+                <Sphere args={[0.004, 6, 6]} position={[-0.035, 0.014, 0.122]}>
+                    <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1} />
+                </Sphere>
+                <Sphere args={[0.004, 6, 6]} position={[0.041, 0.014, 0.122]}>
+                    <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1} />
+                </Sphere>
+
+                {/* Nose */}
+                <Sphere args={[0.018, 8, 8]} position={[0, -0.02, 0.108]}>
+                    <meshStandardMaterial color={skin} roughness={0.7} />
+                </Sphere>
+
+                {/* Mouth */}
+                <mesh position={[0, -0.055, 0.100]} rotation={[0.25, 0, 0]}>
+                    <torusGeometry args={[0.025, 0.006, 6, 12, Math.PI]} />
+                    <meshStandardMaterial color="#c0706a" roughness={0.6} />
+                </mesh>
+
+                {/* Ear L */}
+                <Sphere args={[0.022, 8, 8]} position={[-0.113, 0.00, 0.0]}>
+                    <meshStandardMaterial color={skin} roughness={0.7} />
+                </Sphere>
+                {/* Ear R */}
+                <Sphere args={[0.022, 8, 8]} position={[0.113, 0.00, 0.0]}>
+                    <meshStandardMaterial color={skin} roughness={0.7} />
+                </Sphere>
+
+                {/* Style accessories */}
+                {style === 'formal' && (
+                    // Tie knot visible above collar
+                    <mesh position={[0, -0.14, 0.09]} rotation={[0.3, 0, 0]}>
+                        <boxGeometry args={[0.03, 0.05, 0.015]} />
+                        <meshStandardMaterial color="#8B0000" roughness={0.5} />
+                    </mesh>
+                )}
+                {style === 'cool' && (
+                    // Sunglasses
+                    <group position={[0, 0.01, 0.112]}>
+                        <mesh position={[-0.038, 0, 0]}>
+                            <boxGeometry args={[0.044, 0.022, 0.005]} />
+                            <meshStandardMaterial color="#111" metalness={0.8} roughness={0.2} />
+                        </mesh>
+                        <mesh position={[0.038, 0, 0]}>
+                            <boxGeometry args={[0.044, 0.022, 0.005]} />
+                            <meshStandardMaterial color="#111" metalness={0.8} roughness={0.2} />
+                        </mesh>
+                        {/* Bridge */}
+                        <mesh position={[0, 0, 0]}>
+                            <boxGeometry args={[0.016, 0.006, 0.005]} />
+                            <meshStandardMaterial color="#222" metalness={0.9} roughness={0.1} />
+                        </mesh>
+                    </group>
+                )}
+                {style === 'sporty' && (
+                    // Cap
+                    <group position={[0, 0.10, 0.01]}>
+                        <Sphere args={[0.118, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.55]}>
+                            <meshStandardMaterial color={customization?.bodyColor || '#4A90E2'} roughness={0.85} />
+                        </Sphere>
+                        {/* Brim */}
+                        <mesh position={[0, -0.04, 0.085]} rotation={[0.25, 0, 0]}>
+                            <boxGeometry args={[0.22, 0.018, 0.11]} />
+                            <meshStandardMaterial color={customization?.bodyColor || '#4A90E2'} roughness={0.85} />
+                        </mesh>
+                    </group>
+                )}
+            </group>
+
+            {/* ── Username label ── */}
+            <group position={[0, 0.75, 0]}>
+                <mesh>
+                    <planeGeometry args={[Math.max(0.4, username.length * 0.072 + 0.1), 0.14]} />
+                    <meshBasicMaterial color="#000" transparent opacity={0.55} />
+                </mesh>
+                <Text position={[0, 0, 0.01]} fontSize={0.075} color="#fff" anchorX="center" anchorY="middle">
                     {username}
                 </Text>
             </group>
 
-            {/* Action indicator */}
+            {/* ── Action indicator ── */}
             {currentAction === 'viewing_product' && (
-                <group position={[0, 0.85, 0]}>
-                    <Text
-                        fontSize={0.06}
-                        color="#FFD700"
-                        anchorX="center"
-                        anchorY="middle"
-                    >
-                        🛍️
-                    </Text>
+                <group position={[0, 0.95, 0]}>
+                    <Text fontSize={0.07} color="#FFD700" anchorX="center" anchorY="middle">🛍️</Text>
                 </group>
             )}
 
-            {/* Animated highlight ring - color based on action */}
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-                <ringGeometry args={[0.14, 0.17, 32]} />
-                <meshBasicMaterial 
-                    color={currentAction === 'viewing_product' ? '#FFD700' : '#64B5F6'} 
-                    transparent 
-                    opacity={0.5} 
+            {/* ── Ground ring ── */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.60, 0]}>
+                <ringGeometry args={[0.18, 0.22, 32]} />
+                <meshBasicMaterial
+                    color={currentAction === 'viewing_product' ? '#FFD700' : '#64B5F6'}
+                    transparent opacity={0.45}
                 />
             </mesh>
         </group>
@@ -209,7 +400,7 @@ const ProductBox: React.FC<{
     /** True when the centre crosshair is aimed directly at this product. */
     isGazedAt?: boolean;
 }> = ({ product, position, onClick, onMeshMount, isNear = false, isGazedAt = false }) => {
-    const [hovered, setHovered] = useState(false);
+    const [_hovered, setHovered] = useState(false);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const meshRef = useRef<THREE.Mesh | null>(null);
 
@@ -445,8 +636,10 @@ const Shelf: React.FC<{
     );
 };
 
-// Optimized Player Controller
-const PlayerController: React.FC<{
+// ── Third-Person Camera Controller ──────────────────────────────────────────
+// Camera orbits behind the player. Click canvas to lock mouse.
+// Mouse drag rotates the camera. WASD / Arrow keys move the character.
+const ThirdPersonController: React.FC<{
     onTransformUpdate: (
         position: [number, number, number],
         rotation: [number, number, number],
@@ -454,103 +647,125 @@ const PlayerController: React.FC<{
     ) => void;
     collisionBoxes: Array<{ x: number; z: number; w: number; d: number }>;
 }> = ({ onTransformUpdate, collisionBoxes }) => {
-    const { camera } = useThree();
-    const wasMoving = useRef(false);
-    const moveState = useRef({
-        forward: false,
-        backward: false,
-        left: false,
-        right: false,
-    });
+    const { camera, gl } = useThree();
+
+    // Character position tracked independently of the camera (feet on floor, y=0)
+    const charPos    = useRef(new THREE.Vector3(0, 0, 12));
+    const yaw        = useRef(0);     // horizontal camera orbit angle (radians)
+    const pitch      = useRef(0.35);  // vertical camera tilt (radians)
+    const isLocked   = useRef(false);
+    const wasMoving  = useRef(false);
+    const moveState  = useRef({ forward: false, backward: false, left: false, right: false });
+
+    const CAM_DIST   = 3.8;   // distance camera stays behind character
+    const CAM_MIN_P  = 0.15;  // min pitch (nearly horizontal)
+    const CAM_MAX_P  = 0.72;  // max pitch (looking more downward)
+    const LOOK_H     = 1.08;  // avatar head centre is at ~0.62+0.47 = 1.09 above floor
+    const SPEED      = 5.5;
 
     const checkCollision = useCallback((pos: THREE.Vector3) => {
         if (Math.abs(pos.x) > 19 || Math.abs(pos.z) > 19) return true;
-
         for (const box of collisionBoxes) {
-            const halfW = box.w / 2;
-            const halfD = box.d / 2;
-            if (
-                pos.x > box.x - halfW && pos.x < box.x + halfW &&
-                pos.z > box.z - halfD && pos.z < box.z + halfD
-            ) {
-                return true;
-            }
+            const hw = box.w / 2, hd = box.d / 2;
+            if (pos.x > box.x - hw && pos.x < box.x + hw &&
+                pos.z > box.z - hd && pos.z < box.z + hd) return true;
         }
         return false;
     }, [collisionBoxes]);
 
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            const state = moveState.current;
-            if (e.code === 'KeyW' || e.code === 'ArrowUp') state.forward = true;
-            if (e.code === 'KeyS' || e.code === 'ArrowDown') state.backward = true;
-            if (e.code === 'KeyA' || e.code === 'ArrowLeft') state.left = true;
-            if (e.code === 'KeyD' || e.code === 'ArrowRight') state.right = true;
+        const canvas = gl.domElement;
+
+        const requestLock = () => canvas.requestPointerLock();
+        const onLockChange = () => { isLocked.current = document.pointerLockElement === canvas; };
+
+        const onMouseMove = (e: MouseEvent) => {
+            if (!isLocked.current) return;
+            yaw.current  -= e.movementX * 0.0022;
+            pitch.current = Math.max(CAM_MIN_P, Math.min(CAM_MAX_P, pitch.current - e.movementY * 0.0022));
         };
 
-        const handleKeyUp = (e: KeyboardEvent) => {
-            const state = moveState.current;
-            if (e.code === 'KeyW' || e.code === 'ArrowUp') state.forward = false;
-            if (e.code === 'KeyS' || e.code === 'ArrowDown') state.backward = false;
-            if (e.code === 'KeyA' || e.code === 'ArrowLeft') state.left = false;
-            if (e.code === 'KeyD' || e.code === 'ArrowRight') state.right = false;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.code === 'KeyW' || e.code === 'ArrowUp')    moveState.current.forward   = true;
+            if (e.code === 'KeyS' || e.code === 'ArrowDown')  moveState.current.backward  = true;
+            if (e.code === 'KeyA' || e.code === 'ArrowLeft')  moveState.current.left      = true;
+            if (e.code === 'KeyD' || e.code === 'ArrowRight') moveState.current.right     = true;
+        };
+        const onKeyUp = (e: KeyboardEvent) => {
+            if (e.code === 'KeyW' || e.code === 'ArrowUp')    moveState.current.forward   = false;
+            if (e.code === 'KeyS' || e.code === 'ArrowDown')  moveState.current.backward  = false;
+            if (e.code === 'KeyA' || e.code === 'ArrowLeft')  moveState.current.left      = false;
+            if (e.code === 'KeyD' || e.code === 'ArrowRight') moveState.current.right     = false;
         };
 
-        document.addEventListener('keydown', handleKeyDown);
-        document.addEventListener('keyup', handleKeyUp);
+        canvas.addEventListener('click', requestLock);
+        document.addEventListener('pointerlockchange', onLockChange);
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
 
         return () => {
-            document.removeEventListener('keydown', handleKeyDown);
-            document.removeEventListener('keyup', handleKeyUp);
+            canvas.removeEventListener('click', requestLock);
+            document.removeEventListener('pointerlockchange', onLockChange);
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('keydown', onKeyDown);
+            document.removeEventListener('keyup', onKeyUp);
         };
-    }, []);
+    }, [gl]);
 
     useFrame((_, delta) => {
-        const state = moveState.current;
-        const speed = 5.5;
-        const direction = new THREE.Vector3(
-            Number(state.right) - Number(state.left),
-            0,
-            Number(state.backward) - Number(state.forward)
-        );
+        const ms = moveState.current;
+        const moving = ms.forward || ms.backward || ms.left || ms.right;
 
-        const rotation: [number, number, number] = [
-            camera.rotation.x,
-            camera.rotation.y,
-            camera.rotation.z,
+        if (moving) {
+            // Forward = direction the camera faces on the XZ plane
+            const fx = -Math.sin(yaw.current);
+            const fz = -Math.cos(yaw.current);
+            const rx =  Math.cos(yaw.current);   // rightward strafe direction
+            const rz = -Math.sin(yaw.current);
+
+            let dx = 0, dz = 0;
+            if (ms.forward)  { dx += fx; dz += fz; }
+            if (ms.backward) { dx -= fx; dz -= fz; }
+            if (ms.right)    { dx += rx; dz += rz; }
+            if (ms.left)     { dx -= rx; dz -= rz; }
+
+            const len = Math.sqrt(dx * dx + dz * dz) || 1;
+            const next = charPos.current.clone();
+            next.x += (dx / len) * SPEED * delta;
+            next.z += (dz / len) * SPEED * delta;
+            next.y  = 0;
+            if (!checkCollision(next)) charPos.current.copy(next);
+        }
+
+        // ── Position camera behind + above the character ────────────────────────
+        const hDist = Math.cos(pitch.current) * CAM_DIST;  // horizontal distance
+        const vDist = Math.sin(pitch.current) * CAM_DIST;  // vertical height offset
+
+        const targetCamX = charPos.current.x + Math.sin(yaw.current) * hDist;
+        const targetCamY = charPos.current.y + LOOK_H + vDist;
+        const targetCamZ = charPos.current.z + Math.cos(yaw.current) * hDist;
+
+        // Smooth lerp so camera follows without snapping
+        camera.position.x += (targetCamX - camera.position.x) * 0.15;
+        camera.position.y += (targetCamY - camera.position.y) * 0.15;
+        camera.position.z += (targetCamZ - camera.position.z) * 0.15;
+
+        // Camera always looks at avatar's head
+        camera.lookAt(charPos.current.x, charPos.current.y + LOOK_H, charPos.current.z);
+
+        // Avatar faces the same direction the camera is looking (away from camera)
+        const avatarRotY = yaw.current + Math.PI;
+
+        const pos: [number, number, number] = [
+            charPos.current.x,
+            charPos.current.y,  // y = 0 (feet on floor)
+            charPos.current.z,
         ];
+        const rot: [number, number, number] = [0, avatarRotY, 0];
 
-        if (direction.length() > 0) {
-            direction.normalize();
-
-            const forward = new THREE.Vector3();
-            camera.getWorldDirection(forward);
-            forward.y = 0;
-            forward.normalize();
-
-            const right = new THREE.Vector3();
-            right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
-
-            const movement = new THREE.Vector3();
-            movement.addScaledVector(forward, -direction.z * speed * delta);
-            movement.addScaledVector(right, direction.x * speed * delta);
-
-            const nextPos = camera.position.clone().add(movement);
-            if (!checkCollision(nextPos)) {
-                camera.position.add(movement);
-            }
-
-            camera.position.y = 1.6;
-            onTransformUpdate([camera.position.x, camera.position.y, camera.position.z], rotation, true);
-            wasMoving.current = true;
-            return;
-        }
-
-        if (wasMoving.current) {
-            camera.position.y = 1.6;
-            onTransformUpdate([camera.position.x, camera.position.y, camera.position.z], rotation, false);
-            wasMoving.current = false;
-        }
+        onTransformUpdate(pos, rot, moving);
+        wasMoving.current = moving;
     });
 
     return null;
@@ -1046,6 +1261,8 @@ export const Store3D: React.FC<Store3DProps> = ({
 }) => {
     const { camera } = useThree();
     const [currentUserPosition, setCurrentUserPosition] = useState<[number, number, number]>([0, 1.6, 12]);
+    const [currentUserRotationY, setCurrentUserRotationY] = useState<number>(0);
+    const [isCurrentUserMoving, setIsCurrentUserMoving] = useState(false);
     const [gazedProductId, setGazedProductId] = useState<string | null>(null);
     const lastUpdateTime = useRef(0);
     const raycasterRef = useRef(new THREE.Raycaster());
@@ -1228,6 +1445,8 @@ export const Store3D: React.FC<Store3DProps> = ({
         if (now - lastUpdateTime.current > 16) {
             lastUpdateTime.current = now;
             setCurrentUserPosition(position);
+            setCurrentUserRotationY(rotation[1]);
+            setIsCurrentUserMoving(isMoving);
 
             if (presenceManager) {
                 presenceManager.updateState({
@@ -1481,11 +1700,13 @@ export const Store3D: React.FC<Store3DProps> = ({
             ))}
 
             {/* Current User */}
-            <Avatar 
-                position={currentUserPosition} 
-                username="You" 
-                isCurrentUser 
-                customization={avatarCustomization} 
+            <Avatar
+                position={currentUserPosition}
+                rotation={[0, currentUserRotationY, 0]}
+                username="You"
+                isCurrentUser
+                customization={avatarCustomization}
+                animationState={isCurrentUserMoving ? 'walking' : 'idle'}
             />
 
             {/* Other Online Shoppers */}
@@ -1493,6 +1714,7 @@ export const Store3D: React.FC<Store3DProps> = ({
                 <Avatar
                     key={user.user_id}
                     position={user.position}
+                    rotation={[0, user.rotation.y ?? 0, 0]}
                     username={user.username}
                     customization={user.avatar_customization}
                     animationState={user.animation_state}
@@ -1500,9 +1722,8 @@ export const Store3D: React.FC<Store3DProps> = ({
                 />
             ))}
 
-            {/* Controls */}
-            <PlayerController onTransformUpdate={handleTransformUpdate} collisionBoxes={collisionBoxes} />
-            <PointerLockControls />
+            {/* Third-person camera controller — no PointerLockControls needed */}
+            <ThirdPersonController onTransformUpdate={handleTransformUpdate} collisionBoxes={collisionBoxes} />
         </>
     );
 };
