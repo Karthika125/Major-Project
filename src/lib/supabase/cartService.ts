@@ -285,12 +285,33 @@ const toCheckoutError = (error: any): Error => {
     return new Error('Checkout failed. Please try again.');
 };
 
-export const checkoutStoreCart = async (userId: string, _storeId: string): Promise<CheckoutResult> => {
+const shouldFallbackToLegacyCheckoutRpc = (error: any): boolean => {
+    const raw = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+
+    return (
+        raw.includes('could not find the function public.checkout_cart') ||
+        raw.includes('function public.checkout_cart') ||
+        raw.includes('unknown') && raw.includes('p_store_id')
+    );
+};
+
+export const checkoutStoreCart = async (userId: string, storeId: string): Promise<CheckoutResult> => {
     const db = supabase as any;
-    const { data: createdOrderId, error: checkoutError } = await db
+    let { data: createdOrderId, error: checkoutError } = await db
         .rpc('checkout_cart', {
             p_user_id: userId,
+            p_store_id: storeId,
         });
+
+    if (checkoutError && shouldFallbackToLegacyCheckoutRpc(checkoutError)) {
+        const legacyResult = await db
+            .rpc('checkout_cart', {
+                p_user_id: userId,
+            });
+
+        createdOrderId = legacyResult.data;
+        checkoutError = legacyResult.error;
+    }
 
     if (checkoutError) {
         throw toCheckoutError(checkoutError);

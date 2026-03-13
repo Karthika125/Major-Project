@@ -513,7 +513,7 @@ export const StorePage: React.FC = () => {
             )}
 
             <div className={styles.instructions3D}>
-                <p>🎮 WASD - Move | Mouse - Look | Click - Interact</p>
+                <p>🎮 WASD - Move | Mouse - Look | Click / E - Interact</p>
             </div>
         </div>
     );
