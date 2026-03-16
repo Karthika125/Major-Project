@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth/AuthProvider';
 import { supabase } from '../lib/supabase/client';
 import { useGameStore } from '../lib/store/gameStore';
+import { ProductIdentifier } from '../components/ProductIdentifier';
 import styles from './MallPage.module.css';
 
 interface StoreCard {
@@ -60,6 +61,7 @@ export const MallPage: React.FC = () => {
     const [stores, setStores] = useState<StoreCard[]>([]);
     const [storesLoading, setStoresLoading] = useState(true);
     const [storesError, setStoresError] = useState('');
+    const [showProductIdentifier, setShowProductIdentifier] = useState(false);
 
     useEffect(() => {
         if (!user) {
@@ -129,6 +131,13 @@ export const MallPage: React.FC = () => {
                     </div>
                     <div className={styles.userInfo}>
                         <span className={styles.welcome}>Welcome, {user.email?.split('@')[0]}!</span>
+                        <button 
+                            className={styles.cameraBtnHeader}
+                            onClick={() => setShowProductIdentifier(true)}
+                            title="Scan product with camera"
+                        >
+                            📸 Scan Product
+                        </button>
                         <button className={styles.profileBtn} onClick={handleProfile}>
                             My Profile
                         </button>
@@ -207,6 +216,11 @@ export const MallPage: React.FC = () => {
             <footer className={styles.footer}>
                 <p>© 2026 Virtual Store - Choose a store and start shopping</p>
             </footer>
+
+            {/* Product Identifier Modal */}
+            {showProductIdentifier && (
+                <ProductIdentifier onClose={() => setShowProductIdentifier(false)} />
+            )}
         </div>
     );
 };

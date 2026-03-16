@@ -125,6 +125,25 @@
     transform: translateY(-2px);
 }
 
+.cameraBtnHeader {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: 1px solid transparent;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 14px rgba(102, 126, 234, 0.35);
+}
+
+.cameraBtnHeader:hover {
+    background: linear-gradient(135deg, #5e6fdc 0%, #6d368a 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.45);
+}
+
 /* Hero Section */
 .hero {
     padding: 80px 40px;

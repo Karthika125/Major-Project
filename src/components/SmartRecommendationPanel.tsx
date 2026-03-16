@@ -137,9 +137,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onView, onAddToCart,
 
 interface SmartRecommendationPanelProps {
     storeId?: string;
+    scannedItem?: string;
 }
 
-export const SmartRecommendationPanel: React.FC<SmartRecommendationPanelProps> = ({ storeId }) => {
+export const SmartRecommendationPanel: React.FC<SmartRecommendationPanelProps> = ({ storeId, scannedItem }) => {
     const { user }   = useAuth();
     const { products, selectedProduct, setSelectedProduct } = useGameStore();
 
@@ -208,6 +209,7 @@ export const SmartRecommendationPanel: React.FC<SmartRecommendationPanelProps> =
         }
     }, [selectedProduct?.id, result?.similar]);
 
+
     const handleView = useCallback((product: ScoredProduct) => {
         setSelectedProduct(product as any);
     }, [setSelectedProduct]);
@@ -227,6 +229,40 @@ export const SmartRecommendationPanel: React.FC<SmartRecommendationPanelProps> =
                                    result?.similar   ?? [];
 
     const maxScore = tabItems.length > 0 ? Math.max(...tabItems.map(p => p.score), 0.01) : 1;
+    const brandPriority = ['samsung', 'vivo', 'oneplus'];
+    const phoneFallbackProducts = (products as any[])
+        .filter((p) => {
+            const name = (p?.name || '').toString().toLowerCase();
+            const category = (p?.category || '').toString().toLowerCase();
+            return (
+                category.includes('elect') ||
+                /(samsung|vivo|oneplus|phone|mobile)/.test(name)
+            );
+        })
+        .sort((a, b) => {
+            const aName = (a?.name || '').toString().toLowerCase();
+            const bName = (b?.name || '').toString().toLowerCase();
+            const aBrand = brandPriority.findIndex((brand) => aName.includes(brand));
+            const bBrand = brandPriority.findIndex((brand) => bName.includes(brand));
+            const aBrandRank = aBrand === -1 ? 999 : aBrand;
+            const bBrandRank = bBrand === -1 ? 999 : bBrand;
+
+            if (aBrandRank !== bBrandRank) return aBrandRank - bBrandRank;
+
+            const aHasImage = a?.image_url ? 1 : 0;
+            const bHasImage = b?.image_url ? 1 : 0;
+            if (aHasImage !== bHasImage) return bHasImage - aHasImage;
+
+            return aName.localeCompare(bName);
+        })
+        .slice(0, 8);
+    const availableItemTypes = Array.from(
+        new Set(
+            products
+                .map((p: any) => (p?.category || '').toString().trim())
+                .filter((v: string) => v.length > 0)
+        )
+    ).sort((a, b) => a.localeCompare(b));
 
     // ── Collapsed ────────────────────────────────────────────────────────────
     if (collapsed) {
@@ -301,6 +337,26 @@ export const SmartRecommendationPanel: React.FC<SmartRecommendationPanelProps> =
 
             {/* ── Content ── */}
             <div className={styles.content} role="tabpanel">
+                {(scannedItem || availableItemTypes.length > 0) && (
+                    <div className={styles.availableSection}>
+                        {scannedItem && (
+                            <div className={styles.scannedContext}>
+                                Looking for: <strong>{scannedItem}</strong>
+                            </div>
+                        )}
+                        <div className={styles.availableTitle}>All item types available</div>
+                        <div className={styles.availableChips}>
+                            {availableItemTypes.length > 0 ? (
+                                availableItemTypes.map((type) => (
+                                    <span key={type} className={styles.availableChip}>{type}</span>
+                                ))
+                            ) : (
+                                <span className={styles.availableEmpty}>No item types found yet.</span>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* Tab description blurb */}
                 <div className={styles.tabBlurb}>
                     {activeTab === 'for_you'  && '🎯 Products scored from your order history, cart, and browsing.'}
@@ -315,6 +371,60 @@ export const SmartRecommendationPanel: React.FC<SmartRecommendationPanelProps> =
                         </div>
                         <div className={styles.loadingText}>Finding your picks…</div>
                     </div>
+                ) : tabItems.length === 0 && phoneFallbackProducts.length > 0 ? (
+                    <>
+                        <div className={styles.phoneFallbackTitle}>
+                            📱 Mobiles available (Samsung / Vivo / OnePlus)
+                        </div>
+                        {phoneFallbackProducts.map((product) => (
+                            <div
+                                key={product.id}
+                                className={styles.card}
+                                onClick={() => setSelectedProduct(product as any)}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={e => e.key === 'Enter' && setSelectedProduct(product as any)}
+                            >
+                                <div
+                                    className={styles.cardGlow}
+                                    style={{
+                                        background: 'radial-gradient(ellipse at 80% 50%, rgba(102,126,234,0.12) 0%, transparent 70%)',
+                                    }}
+                                />
+
+                                <div className={styles.cardBody}>
+                                    <div className={styles.productImageWrap}>
+                                        {product.image_url ? (
+                                            <img
+                                                src={product.image_url}
+                                                alt={product.name}
+                                                className={styles.productImage}
+                                                loading="lazy"
+                                            />
+                                        ) : (
+                                            <span className={styles.productPlaceholder}>📦</span>
+                                        )}
+                                    </div>
+
+                                    <div className={styles.cardInfo}>
+                                        <div className={styles.productName} title={product.name}>
+                                            {product.name}
+                                        </div>
+                                        <div className={styles.productCategory}>{product.category || 'Electronics'}</div>
+                                        <div className={styles.productPrice}>
+                                            ₹{Number(product.price || 0).toLocaleString('en-IN')}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className={styles.reasonRow}>
+                                    <div className={`${styles.reasonBadge} ${styles.category_match}`}>
+                                        📱 Shown based on your scanned phone
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </>
                 ) : tabItems.length === 0 ? (
                     <div className={styles.empty}>
                         <div className={styles.emptyIcon}>

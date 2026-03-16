@@ -1,6 +1,6 @@
 //StorePage.tsx
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Canvas } from '@react-three/fiber';
 import { PerspectiveCamera } from '@react-three/drei';
 import { PresenceManager, STORE_ROOM_CAPACITY } from '../lib/realtime/PresenceManager';
@@ -22,6 +22,7 @@ import { CameraStyleAdvisor } from '../components/CameraStyleAdvisor';
 import { Store3D } from '../components/Store3D';
 import { ProductProximityHUD } from '../components/ProductProximityHUD';
 import { SmartRecommendationPanel } from '../components/SmartRecommendationPanel';
+import { ProductIdentifier } from '../components/ProductIdentifier';
 import styles from './StorePage.module.css';
 
 interface StoreTheme {
@@ -64,6 +65,7 @@ export const StorePage: React.FC = () => {
     const userEmail = user?.email;
     const navigate = useNavigate();
     const { storeId } = useParams<{ storeId: string }>();
+    const [searchParams] = useSearchParams();
 
     const [loading, setLoading] = useState(true);
     const [loadingProgress, setLoadingProgress] = useState(0);
@@ -78,6 +80,8 @@ export const StorePage: React.FC = () => {
     const [selectedPlayer, setSelectedPlayer] = useState<{ user_id: string; username: string } | null>(null);
     const [showCustomization, setShowCustomization] = useState(false);
     const [showStyleAdvisor, setShowStyleAdvisor] = useState(false);
+    const [showProductIdentifier, setShowProductIdentifier] = useState(false);
+    const scannedItem = (searchParams.get('scanItem') || '').trim();
     const [closestProduct, setClosestProduct] = useState<typeof products[0] | null>(null);
     const [avatarCustomization, setAvatarCustomization] = useState<AvatarCustomizationType>({
         bodyColor: '#4A90E2',
@@ -108,6 +112,15 @@ export const StorePage: React.FC = () => {
             setNotifications(prev => prev.filter(n => n.id !== id));
         }, 5000);
     }, []);
+
+    useEffect(() => {
+        const scannedItem = (searchParams.get('scanItem') || '').trim();
+        if (!scannedItem) {
+            return;
+        }
+
+        addNotification(`Hope you find the ${scannedItem} you are looking for.`, 'success');
+    }, [searchParams, addNotification]);
 
     // Player interaction handlers
     const handleWave = useCallback(() => {
@@ -392,7 +405,10 @@ export const StorePage: React.FC = () => {
             <ProductProximityHUD product={closestProduct} />
 
             {/* Smart Recommendation Panel */}
-            <SmartRecommendationPanel storeId={storeId} />
+            <SmartRecommendationPanel
+                storeId={storeId}
+                scannedItem={scannedItem}
+            />
 
 
             {/* Back to Mall Button */}
@@ -464,17 +480,14 @@ export const StorePage: React.FC = () => {
                 >
                     🎨
                 </button>
-                {/*<button
+                <button
                     className={styles.quickActionBtn}
-                    onClick={() => {
-                        console.log('📸 Camera button clicked, opening Style Advisor');
-                        setShowStyleAdvisor(true);
-                    }}
-                    title="AI Style Advisor - Camera"
-                    style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}
+                    onClick={() => setShowProductIdentifier(true)}
+                    title="Scan Product with Camera"
+                    style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
                 >
                     📸
-                </button>*/}
+                </button>
             </div>
 
             {/* Performance Monitor (Dev tool) */}
@@ -510,6 +523,11 @@ export const StorePage: React.FC = () => {
             {/* Camera Style Advisor */}
             {showStyleAdvisor && (
                 <CameraStyleAdvisor onClose={() => setShowStyleAdvisor(false)} />
+            )}
+
+            {/* Product Scanner */}
+            {showProductIdentifier && (
+                <ProductIdentifier onClose={() => setShowProductIdentifier(false)} />
             )}
 
             <div className={styles.instructions3D}>

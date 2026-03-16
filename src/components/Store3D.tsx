@@ -97,6 +97,7 @@ const Avatar: React.FC<{
     customization?: { bodyColor: string; skinTone: string; style: string };
     animationState?: 'idle' | 'walking' | 'waving' | 'shopping';
     currentAction?:  'idle' | 'walking' | 'viewing_product' | 'shopping';
+    movementDirection?: { left: boolean; right: boolean; forward: boolean; backward: boolean };
 }> = ({
     position,
     rotation = [0, 0, 0],
@@ -105,6 +106,7 @@ const Avatar: React.FC<{
     customization,
     animationState = 'idle',
     currentAction  = 'idle',
+    movementDirection = { left: false, right: false, forward: false, backward: false },
 }) => {
     const groupRef   = useRef<THREE.Group>(null);
     const headRef    = useRef<THREE.Group>(null);
@@ -132,6 +134,14 @@ const Avatar: React.FC<{
             : (position[1] > 1 ? position[1] - 1.6 : position[1]);
         const baseY = feetY + 0.62;
 
+        // Calculate head rotation based on movement direction (realistic face turn)
+        let headYaw = 0;
+        if (movementDirection.left) {
+            headYaw = 0.35; // Turn head left
+        } else if (movementDirection.right) {
+            headYaw = -0.35; // Turn head right
+        }
+
         if (animationState === 'walking') {
             const speed = 8;
             const swing = Math.sin(t * speed) * 0.35;
@@ -139,8 +149,11 @@ const Avatar: React.FC<{
             // Body bob
             groupRef.current.position.y = baseY + Math.abs(Math.sin(t * speed)) * 0.04;
 
-            // Head turns side-to-side slightly while walking
-            if (headRef.current)  headRef.current.rotation.y  = Math.sin(t * speed * 0.5) * 0.1;
+            // Head turns based on movement direction, with subtle walking sway
+            if (headRef.current) {
+                const walkSway = Math.sin(t * speed * 0.5) * 0.08;
+                headRef.current.rotation.y = headYaw + walkSway;
+            }
 
             // Arm swing (opposite to legs)
             if (lArmRef.current)  lArmRef.current.rotation.x  =  swing;
@@ -156,15 +169,21 @@ const Avatar: React.FC<{
                 rArmRef.current.rotation.x = -1.2 + Math.sin(t * 6) * 0.3;
                 rArmRef.current.rotation.z = -0.4;
             }
-            if (headRef.current) headRef.current.rotation.y = Math.sin(t * 2) * 0.15;
+            if (headRef.current) {
+                const waveSway = Math.sin(t * 2) * 0.12;
+                headRef.current.rotation.y = headYaw + waveSway;
+            }
 
         } else {
-            // Idle: breathing + subtle head sway
+            // Idle: breathing + subtle head sway combined with direction
             const breathe = Math.sin(t * 1.8) * 0.012;
             groupRef.current.position.y = baseY + breathe;
             groupRef.current.scale.y    = 1 + breathe * 0.3;
 
-            if (headRef.current)  headRef.current.rotation.y  = Math.sin(t * 0.7) * 0.06;
+            if (headRef.current) {
+                const idleSway = Math.sin(t * 0.7) * 0.05;
+                headRef.current.rotation.y = headYaw + idleSway;
+            }
             if (lArmRef.current)  lArmRef.current.rotation.x  = 0;
             if (rArmRef.current) { rArmRef.current.rotation.x = 0; rArmRef.current.rotation.z = 0; }
             if (lLegRef.current)  lLegRef.current.rotation.x  = 0;
@@ -654,7 +673,8 @@ const ThirdPersonController: React.FC<{
     onTransformUpdate: (
         position: [number, number, number],
         rotation: [number, number, number],
-        isMoving: boolean
+        isMoving: boolean,
+        movementDirection?: { left: boolean; right: boolean; forward: boolean; backward: boolean }
     ) => void;
     collisionBoxes: Array<{ x: number; z: number; w: number; d: number }>;
 }> = ({ onTransformUpdate, collisionBoxes }) => {
@@ -775,7 +795,7 @@ const ThirdPersonController: React.FC<{
         ];
         const rot: [number, number, number] = [0, avatarRotY, 0];
 
-        onTransformUpdate(pos, rot, moving);
+        onTransformUpdate(pos, rot, moving, { ...moveState.current });
         wasMoving.current = moving;
     });
 
@@ -1274,6 +1294,7 @@ export const Store3D: React.FC<Store3DProps> = ({
     const [currentUserPosition, setCurrentUserPosition] = useState<[number, number, number]>([0, 1.6, 12]);
     const [currentUserRotationY, setCurrentUserRotationY] = useState<number>(0);
     const [isCurrentUserMoving, setIsCurrentUserMoving] = useState(false);
+    const [currentUserMovementDirection, setCurrentUserMovementDirection] = useState({ left: false, right: false, forward: false, backward: false });
     const [gazedProductId, setGazedProductId] = useState<string | null>(null);
     const lastUpdateTime = useRef(0);
     const raycasterRef = useRef(new THREE.Raycaster());
@@ -1408,7 +1429,7 @@ export const Store3D: React.FC<Store3DProps> = ({
             return;
         }
         const rc = raycasterRef.current;
-        rc.near = 0;
+        rc.near = 0.1;  // Fixed: was 0, now uses small positive value for proper raycasting
         rc.far = LOOK_TARGET_MAX_DISTANCE;
         rc.setFromCamera(new THREE.Vector2(0, 0), camera);
         const gazed =
@@ -1513,7 +1534,8 @@ export const Store3D: React.FC<Store3DProps> = ({
     const handleTransformUpdate = useCallback((
         position: [number, number, number],
         rotation: [number, number, number],
-        isMoving: boolean
+        isMoving: boolean,
+        movementDirection?: { left: boolean; right: boolean; forward: boolean; backward: boolean }
     ) => {
         const now = Date.now();
         // Update at ~60fps
@@ -1522,6 +1544,9 @@ export const Store3D: React.FC<Store3DProps> = ({
             setCurrentUserPosition(position);
             setCurrentUserRotationY(rotation[1]);
             setIsCurrentUserMoving(isMoving);
+            if (movementDirection) {
+                setCurrentUserMovementDirection(movementDirection);
+            }
 
             if (presenceManager) {
                 presenceManager.updateState({
@@ -1782,6 +1807,7 @@ export const Store3D: React.FC<Store3DProps> = ({
                 isCurrentUser
                 customization={avatarCustomization}
                 animationState={isCurrentUserMoving ? 'walking' : 'idle'}
+                movementDirection={currentUserMovementDirection}
             />
 
             {/* Other Online Shoppers */}
