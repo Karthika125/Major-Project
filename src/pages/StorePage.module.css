@@ -252,7 +252,7 @@
 
 .occupancyBadge {
     position: fixed;
-    top: 84px;
+    top: 160px;
     right: 20px;
     background: rgba(26, 26, 46, 0.92);
     backdrop-filter: blur(10px);

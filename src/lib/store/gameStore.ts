@@ -35,6 +35,21 @@ type UserPresence = Database['public']['Tables']['user_presence']['Row'] & {
     animation_state?: 'idle' | 'walking' | 'waving' | 'shopping';
 };
 
+export interface BattleGameState {
+    isActive: boolean;
+    productId: string;
+    productName: string;
+    challengerId: string;
+    challengerName: string;
+    challengedId: string;
+    challengedName: string;
+    winnerId: string | null;
+    phase: 'waiting' | 'countdown' | 'battle' | 'result';
+    myScore: number;
+    opponentScore: number;
+    timeLeft: number;
+}
+
 interface GameState {
     // User
     currentUser: { id: string; username: string; avatar_type: string } | null;
@@ -84,6 +99,16 @@ interface GameState {
     setCurrentScene: (scene: 'entrance' | 'store') => void;
     hasCompletedEntrance: boolean;
     setHasCompletedEntrance: (completed: boolean) => void;
+
+    // Coins
+    coins: number;
+    addCoins: (amount: number) => void;
+    setCoins: (amount: number) => void;
+
+    // Battle Game
+    battleGame: BattleGameState | null;
+    setBattleGame: (game: BattleGameState | null) => void;
+    updateBattleGame: (update: Partial<BattleGameState>) => void;
 }
 
 export const useGameStore = create<GameState>((set) => ({
@@ -196,4 +221,24 @@ export const useGameStore = create<GameState>((set) => ({
     setCurrentScene: (scene) => set({ currentScene: scene }),
     hasCompletedEntrance: false,
     setHasCompletedEntrance: (completed) => set({ hasCompletedEntrance: completed }),
+
+    // Coins — persisted to localStorage so they survive page refresh
+    coins: (() => { try { return Number(localStorage.getItem('vss_coins') || '0'); } catch { return 0; } })(),
+    addCoins: (amount) => set((state) => {
+        const next = state.coins + amount;
+        try { localStorage.setItem('vss_coins', String(next)); } catch {}
+        return { coins: next };
+    }),
+    setCoins: (amount) => {
+        try { localStorage.setItem('vss_coins', String(amount)); } catch {}
+        set({ coins: amount });
+    },
+
+    // Battle Game
+    battleGame: null,
+    setBattleGame: (game) => set({ battleGame: game }),
+    updateBattleGame: (update) =>
+        set((state) => ({
+            battleGame: state.battleGame ? { ...state.battleGame, ...update } : null,
+        })),
 }));
