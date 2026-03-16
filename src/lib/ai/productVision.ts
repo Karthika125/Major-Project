@@ -201,6 +201,16 @@ export const identifyProductFromImage = async (
         const objectType = bestPrediction.class;
         const score = bestPrediction.score;
 
+        // Force-route common false positive for phone scans.
+        if (objectType.toLowerCase() === 'traffic light') {
+            return {
+                objectType: 'Cell phone',
+                confidence: 'high',
+                description: 'Detected: cell phone (traffic light override applied)',
+                category: 'Electronics',
+            };
+        }
+
         // Determine confidence level
         const confidence: 'high' | 'medium' | 'low' =
             score > 0.7 ? 'high' : score > 0.4 ? 'medium' : 'low';
