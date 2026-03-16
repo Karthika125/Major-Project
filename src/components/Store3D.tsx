@@ -123,10 +123,14 @@ const Avatar: React.FC<{
         if (!groupRef.current) return;
 
         // The avatar mesh group origin sits at the pelvis; feet are ~0.62 units below
-        // the visual floor level. Lift baseY by 0.62 so the avatar stands on the floor.
-        // Current user: position[1]=0 (from ThirdPersonController).  baseY = 0.62
-        // Other players: position[1]=1.6 (camera height from presence). baseY = 0.62
-        const baseY = isCurrentUser ? position[1] + 0.62 : position[1] - 0.98;
+        // the visual floor level. Lift feetY by 0.62 so the avatar stands on the floor.
+        // Remote data may be either:
+        // - feet height (current format): y ≈ 0
+        // - camera height (legacy format): y ≈ 1.6
+        const feetY = isCurrentUser
+            ? position[1]
+            : (position[1] > 1 ? position[1] - 1.6 : position[1]);
+        const baseY = feetY + 0.62;
 
         if (animationState === 'walking') {
             const speed = 8;
@@ -172,9 +176,10 @@ const Avatar: React.FC<{
 
     // feetPosition Y is normally overridden each frame by useFrame's baseY,
     // but we set a consistent initial value so the first frame is correct too.
-    const feetPosition: [number, number, number] = isCurrentUser
-        ? [position[0], position[1] + 0.62, position[2]]
-        : [position[0], position[1] - 0.98, position[2]];
+    const feetY = isCurrentUser
+        ? position[1]
+        : (position[1] > 1 ? position[1] - 1.6 : position[1]);
+    const feetPosition: [number, number, number] = [position[0], feetY + 0.62, position[2]];
 
     return (
         <group ref={groupRef} position={feetPosition} rotation={rotation}>
