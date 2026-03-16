@@ -23,6 +23,7 @@ import { Store3D } from '../components/Store3D';
 import { ProductProximityHUD } from '../components/ProductProximityHUD';
 import { SmartRecommendationPanel } from '../components/SmartRecommendationPanel';
 import { ProductIdentifier } from '../components/ProductIdentifier';
+import { StoreNpcHelper } from '../components/StoreNpcHelper';
 import styles from './StorePage.module.css';
 
 interface StoreTheme {
@@ -81,6 +82,7 @@ export const StorePage: React.FC = () => {
     const [showCustomization, setShowCustomization] = useState(false);
     const [showStyleAdvisor, setShowStyleAdvisor] = useState(false);
     const [showProductIdentifier, setShowProductIdentifier] = useState(false);
+    const [showNpcHelper, setShowNpcHelper] = useState(false);
     const scannedItem = (searchParams.get('scanItem') || '').trim();
     const [closestProduct, setClosestProduct] = useState<typeof products[0] | null>(null);
     const [avatarCustomization, setAvatarCustomization] = useState<AvatarCustomizationType>({
@@ -390,6 +392,7 @@ export const StorePage: React.FC = () => {
                     products={products}
                     onProductClick={handleProductClick}
                     onCheckoutCounterClick={handleCheckoutCounterClick}
+                    onNpcInteract={() => setShowNpcHelper(true)}
                     storeTheme={storeTheme}
                     avatarCustomization={avatarCustomization}
                     presenceManager={presenceManagerRef.current}
@@ -456,6 +459,15 @@ export const StorePage: React.FC = () => {
 
             {/* AI Assistant */}
             <AIAssistant />
+
+            {/* NPC Shop Guide */}
+            <StoreNpcHelper
+                storeName={storeTheme.name}
+                products={products as any}
+                open={showNpcHelper}
+                onOpenChange={setShowNpcHelper}
+                showDockButton={false}
+            />
 
             <div className={styles.quickActions}>
                 <button

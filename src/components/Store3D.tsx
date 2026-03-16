@@ -40,6 +40,8 @@ const LOOK_TARGET_MAX_DISTANCE = 5;
 const PRODUCT_INTERACT_DISTANCE = 2.5;
 /** Player must be this close to click the checkout counter. */
 const CHECKOUT_INTERACT_DISTANCE = 2.0;
+/** Player must be this close to interact with shop helper NPC. */
+const NPC_INTERACT_DISTANCE = 2.4;
 
 const isTextInputTarget = (target: EventTarget | null): boolean => {
     if (!(target instanceof HTMLElement)) return false;
@@ -75,6 +77,7 @@ interface Store3DProps {
     presenceManager: any;
     onPlayerSelect?: (player: { user_id: string; username: string }) => void;
     onClosestProductChange?: (product: Product | null) => void;
+    onNpcInteract?: () => void;
 }
 
 
@@ -1289,6 +1292,7 @@ export const Store3D: React.FC<Store3DProps> = ({
     avatarCustomization,
     presenceManager,
     onClosestProductChange,
+    onNpcInteract,
 }) => {
     const { camera } = useThree();
     const [currentUserPosition, setCurrentUserPosition] = useState<[number, number, number]>([0, 1.6, 12]);
@@ -1304,15 +1308,33 @@ export const Store3D: React.FC<Store3DProps> = ({
         gazedProductId: string | null;
         nearbyProductIds: Set<string>;
         canUseCheckout: boolean;
+        canUseNpc: boolean;
         products: Product[];
     }>({
         gazedProductId: null,
         nearbyProductIds: new Set<string>(),
         canUseCheckout: false,
+        canUseNpc: false,
         products,
     });
     const onProductClickRef = useRef(onProductClick);
     const onCheckoutCounterClickRef = useRef(onCheckoutCounterClick);
+    const onNpcInteractRef = useRef(onNpcInteract);
+
+    const npcPosition = useMemo<[number, number, number]>(() => {
+        const candidates: Array<[number, number, number]> = [
+            [-15, 0, -10],
+            [15, 0, -9],
+            [-14, 0, 10],
+            [14, 0, 9],
+            [0, 0, 13],
+            [0, 0, -9],
+        ];
+        const seed = (storeTheme?.name || 'store')
+            .split('')
+            .reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+        return candidates[seed % candidates.length];
+    }, [storeTheme?.name]);
     
     // Subscribe to real player data from game store instead of mock data
     const otherPlayers = useGameStore((state) => state.otherPlayers);
@@ -1465,14 +1487,22 @@ export const Store3D: React.FC<Store3DProps> = ({
         return dx * dx + dz * dz <= CHECKOUT_INTERACT_DISTANCE * CHECKOUT_INTERACT_DISTANCE;
     }, [currentUserPosition]);
 
+    const canUseNpc = useMemo(() => {
+        const [px, , pz] = currentUserPosition;
+        const dx = px - npcPosition[0];
+        const dz = pz - npcPosition[2];
+        return dx * dx + dz * dz <= NPC_INTERACT_DISTANCE * NPC_INTERACT_DISTANCE;
+    }, [currentUserPosition, npcPosition]);
+
     useEffect(() => {
         interactionStateRef.current = {
             gazedProductId,
             nearbyProductIds,
             canUseCheckout,
+            canUseNpc,
             products,
         };
-    }, [gazedProductId, nearbyProductIds, canUseCheckout, products]);
+    }, [gazedProductId, nearbyProductIds, canUseCheckout, canUseNpc, products]);
 
     useEffect(() => {
         onProductClickRef.current = onProductClick;
@@ -1481,6 +1511,10 @@ export const Store3D: React.FC<Store3DProps> = ({
     useEffect(() => {
         onCheckoutCounterClickRef.current = onCheckoutCounterClick;
     }, [onCheckoutCounterClick]);
+
+    useEffect(() => {
+        onNpcInteractRef.current = onNpcInteract;
+    }, [onNpcInteract]);
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -1492,6 +1526,7 @@ export const Store3D: React.FC<Store3DProps> = ({
                 gazedProductId: activeProductId,
                 nearbyProductIds: nearbyIds,
                 canUseCheckout: checkoutActive,
+                canUseNpc: npcActive,
                 products: currentProducts,
             } = interactionStateRef.current;
 
@@ -1504,10 +1539,16 @@ export const Store3D: React.FC<Store3DProps> = ({
                 }
             }
 
-            if (!checkoutActive) return;
+            if (checkoutActive) {
+                event.preventDefault();
+                onCheckoutCounterClickRef.current?.();
+                return;
+            }
 
-            event.preventDefault();
-            onCheckoutCounterClickRef.current?.();
+            if (npcActive) {
+                event.preventDefault();
+                onNpcInteractRef.current?.();
+            }
         };
 
         document.addEventListener('keydown', onKeyDown);
@@ -1780,6 +1821,35 @@ export const Store3D: React.FC<Store3DProps> = ({
                 </Text>
                 {/* Spotlight on display */}
                 <pointLight position={[0, 2.2, 0]} intensity={0.5} color="#FFF5CC" distance={4} />
+            </group>
+
+            {/* ── Shop helper NPC (random seeded position per store) ── */}
+            <group
+                position={npcPosition}
+                onClick={(event) => {
+                    event.stopPropagation();
+                    if (!canUseNpc) return;
+                    onNpcInteract?.();
+                }}
+            >
+                <Avatar
+                    position={[0, 0, 0]}
+                    rotation={[0, Math.PI, 0]}
+                    username="Shop Guide NPC"
+                    customization={{
+                        bodyColor: canUseNpc ? '#5b8dff' : '#3f5fa8',
+                        skinTone: '#ffd5b3',
+                        style: 'formal',
+                    }}
+                    animationState="idle"
+                    currentAction="idle"
+                />
+                <Text position={[0, 1.95, 0]} fontSize={0.18} color={canUseNpc ? '#ffffff' : '#dbe7ff'} anchorX="center" anchorY="middle" outlineWidth={0.012} outlineColor="#000000">
+                    {canUseNpc ? 'Press E / Click to talk' : 'Shop Guide NPC'}
+                </Text>
+                {canUseNpc && (
+                    <pointLight position={[0, 2.1, 0.4]} intensity={0.8} color="#8eb6ff" distance={3.5} />
+                )}
             </group>
 
             {/* Shelves with Products */}
